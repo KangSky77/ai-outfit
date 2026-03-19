@@ -8,7 +8,7 @@
 - **OS**: Ubuntu 22.04 LTS (Home Server)
 - **Backend**: Node.js, Express, Passport.js
 - **Frontend**: Vue.js 3, HTML5 Geolocation API
-- **AI/API**: Google Gemini 1.5 Flash, OpenWeatherMap API
+- **AI/API**: Google Gemini Flash Lite, OpenWeatherMap API
 - **Infra**: Nginx (Reverse Proxy), Certbot (SSL/HTTPS), PM2, DuckDNS
 
 ## 🚀 주요 특징
