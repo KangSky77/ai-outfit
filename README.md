@@ -13,7 +13,7 @@
 
 ## 🚀 주요 특징
 - **Storage Optimization**: Symbolic Link를 활용해 2번 HDD(458GB)를 메인 저장소로 사용.
-- **Security**: Fail2Ban 및 SSH 포트 변경(20477)으로 서버 보안 강화.
+- **Security**: Fail2Ban 및 SSH 포트 변경으로 서버 보안 강화.
 - **Automation**: PM2 Startup 설정을 통해 서버 부팅 시 서비스 자동 실행.
 - **Context-Aware**: 사용자의 실시간 GPS 정보를 기반으로 맞춤형 날씨 조언 제공.
 
