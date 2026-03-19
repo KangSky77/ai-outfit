@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>내 옷장 기록 📸</title>
+    <style>
+        /* [1. 전체적인 느낌 잡기] - 모던한 스타일링 */
+        body { font-family: 'Pretendard', sans-serif; background: #f5f2eb; max-width: 500px; margin: auto; padding: 20px; text-align: center; color: #333; }
+        .card { background: white; padding: 20px; border-radius: 15px; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+        .btn { padding: 12px 20px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; font-size: 16px; transition: 0.2s; }
+        
+        /* 구글 버튼 디자인 (하늘님꺼 복구!) */
+        .btn-google { background: #4285F4; color: white; display: flex; align-items: center; justify-content: center; gap: 10px; margin: 0 auto; width: 80%; }
+        
+        /* 분석 버튼 디자인 */
+        .btn-submit { background: #4a3f36; color: white; margin-top: 10px; }
+        .btn-submit:hover { background: #352d26; }
+        
+        /* 갤러리 디자인 */
+        #history-list { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; text-align: left; }
+        .history-item { background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        .history-item img { width: 100%; height: 180px; object-fit: cover; }
+    </style>
+</head>
+<body>
+
+    <div id="auth-container" class="card" style="background: #fdfaf6;">
+        
+        <div id="loginSection">
+            <h2 style="margin-top:0; color:#4a3f36;">거울 셀카 분석기 📸</h2>
+            <p style="font-size: 14px; color: #666;">로그인하고 나만의 옷장을 만들어보세요!</p>
+            <button class="btn btn-google" onclick="location.href='/auth/google'">
+                구글로 로그인 시작하기
+            </button>
+        </div>
+        
+        <div id="userSection" style="display: none; justify-content: space-between; align-items: center; gap: 10px;">
+            <p style="margin: 0; font-size: 18px;">👋 반가워요, <span id="userName" style="font-weight: bold; color: #8d7b68;"></span>님!</p>
+            <button onclick="location.href='/logout'" style="background: white; border: 1px solid #ccc; padding: 5px 10px; border-radius: 5px; cursor: pointer; font-size: 12px; color: gray;">로그아웃</button>
+        </div>
+    </div>
+
+    <div id="main-app" style="display: none;">
+        
+        <div class="card">
+            <form id="uploadForm">
+                <input type="file" id="imageInput" accept="image/*" required style="width: 100%; margin-bottom: 10px; font-size: 14px;">
+                <button type="submit" class="btn btn-submit">내 코디 분석하기 🚀</button>
+            </form>
+            <div id="loading" style="display:none; margin-top:15px; color:#8d7b68; font-weight:bold;">🗺️ 위치 확인 및 AI 분석 중...</div>
+            <div id="result" style="margin-top:15px; white-space:pre-wrap; font-size:14.5px; text-align:left; line-height: 1.6; color:#444;"></div>
+        </div>
+
+        <h2 style="color:#4a3f36; margin-top: 30px;">지난 코디 기록 👗</h2>
+        <div id="history-list"></div>
+
+    </div>
+
+    <script>
+        // ----------------------------------------------------
+        // [C] 자바스크립트 로직 (여기가 뇌입니다! 꼬인 걸 풉니다)
+        // ----------------------------------------------------
+
+        // [1. 유저 확인 & 화면 전환 로직]
+        async function init() {
+            try {
+                // 서버에 "나 지금 로그인 상태야?" 물어보기
+                const userRes = await fetch('/api/user');
+                const user = await userRes.json();
+
+                // 🌟 핵심! 조건문에서 명확하게 화면을 바꿔줘야 합니다.
+                if(user) {
+                    // 로그인 상태라면!
+                    document.getElementById('loginSection').style.display = 'none';    // 로그인 버튼 숨기기
+                    document.getElementById('userSection').style.display = 'flex';   // 환영 메시지 보여주기
+                    document.getElementById('userName').innerText = user.displayName; // 이름 채워넣기
+                    
+                    document.getElementById('main-app').style.display = 'block';     // 메인 앱 보여주기 (사진 업로드, 갤러리)
+                    loadHistory(); // 이 유저의 지난 기록 불러오기
+                } else {
+                    // 로그인 안 된 상태라면! (기본값)
+                    document.getElementById('loginSection').style.display = 'block';   // 로그인 버튼 보여주기
+                    document.getElementById('userSection').style.display = 'none';    // 환영 메시지 숨기기
+                    document.getElementById('main-app').style.display = 'none';      // 메인 앱 숨기기
+                }
+            } catch(e) { console.error("초기화 중 에러:", e); }
+        }
+
+        // [2. 위치 가져오기 로직]
+        const getUserLocation = () => {
+            return new Promise((resolve) => {
+                if (!navigator.geolocation) return resolve(null);
+                navigator.geolocation.getCurrentPosition(
+                    (pos) => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+                    () => resolve(null) // 권한 거부 시 null
+                );
+            });
+        };
+
+        // [3. 갤러리(History) 불러오기 로직]
+        async function loadHistory() {
+            try {
+                const res = await fetch('/api/history');
+                const history = await res.json();
+                const list = document.getElementById('history-list');
+                
+                // DB에서 가져온 데이터로 화면 그리기
+                list.innerHTML = history.map(item => `
+                    <div class="history-item card">
+                        <img src="${item.image_path}" alt="코디 사진">
+                        <div style="padding:10px; font-size:12px; text-align: left;">
+                            <small style="color:#888;">${new Date(item.created_at).toLocaleDateString()}</small>
+                            <p style="margin:5px 0; color:#444;">${item.analysis.substring(0, 35)}...</p>
+                        </div>
+                    </div>
+                `).join('');
+            } catch(e) { console.error("갤러리 로딩 에러:", e); }
+        }
+
+        // [4. 분석 실행 로직]
+        document.getElementById('uploadForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const loading = document.getElementById('loading');
+            const resultDiv = document.getElementById('result');
+            
+            loading.style.display = 'block';
+            resultDiv.innerText = ''; // 이전 결과 지우기
+
+            const coords = await getUserLocation(); // 1. 위치 먼저 따기
+            const formData = new FormData();
+            formData.append('selfie', document.getElementById('imageInput').files[0]); // 2. 사진 넣기
+            if (coords) {
+                // 3. 위치 정보가 있으면 같이 넣기!
+                formData.append('lat', coords.lat);
+                formData.append('lon', coords.lon);
+            }
+
+            try {
+                // 4. 서버로 전송!
+                const res = await fetch('/analyze-outfit', { method: 'POST', body: formData });
+                const data = await res.json();
+                
+                loading.style.display = 'none';
+                if(data.error) {
+                    resultDiv.innerText = `오류: ${data.error}`;
+                } else {
+                    resultDiv.innerText = data.analysis; // AI 분석 결과 표시
+                    loadHistory(); // 5. 성공했으니 갤러리 새로고침!
+                }
+            } catch(err) {
+                loading.style.display = 'none';
+                resultDiv.innerText = '서버 통신 에러가 발생했습니다.';
+            }
+        };
+
+        // [최초 실행]
+        init();
+    </script>
+</body>
+</html>
