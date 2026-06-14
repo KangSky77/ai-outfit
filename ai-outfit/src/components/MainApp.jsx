@@ -9,20 +9,27 @@ import {
   fetchHistory, fetchPublicGallery, likeOutfit, deleteOutfit,
 } from '../api.js'
 
+// 목록 상태: status('idle'|'loading'|'error'|'done') + items
+const initialList = { status: 'idle', items: [] }
+
 export default function MainApp() {
   const [tab, setTab] = useState('upload')
-  const [history, setHistory] = useState([])
-  const [gallery, setGallery] = useState([])
+  const [history, setHistory] = useState(initialList)
+  const [gallery, setGallery] = useState(initialList)
 
-  const loadHistory = useCallback(async () => {
-    try { setHistory(await fetchHistory()) }
-    catch (e) { console.error('기록 로딩 에러:', e) }
-  }, [])
+  // 공통 로더: 로딩/에러 상태까지 관리해서 화면에 보여줄 수 있게 한다.
+  const makeLoader = (fetchFn, setState) => async () => {
+    setState((s) => ({ ...s, status: 'loading' }))
+    try {
+      setState({ status: 'done', items: await fetchFn() })
+    } catch (e) {
+      console.error('목록 로딩 에러:', e)
+      setState({ status: 'error', items: [] })
+    }
+  }
 
-  const loadGallery = useCallback(async () => {
-    try { setGallery(await fetchPublicGallery()) }
-    catch (e) { console.error('갤러리 로딩 에러:', e) }
-  }, [])
+  const loadHistory = useCallback(makeLoader(fetchHistory, setHistory), [])
+  const loadGallery = useCallback(makeLoader(fetchPublicGallery, setGallery), [])
 
   // 탭 전환 시 해당 데이터를 새로 불러온다.
   const switchTab = useCallback((next) => {
@@ -35,7 +42,7 @@ export default function MainApp() {
   const handleLike = useCallback(async (id) => {
     try {
       const { likes, liked } = await likeOutfit(id)
-      const patch = (arr) => arr.map((it) => (it.id === id ? { ...it, likes, liked } : it))
+      const patch = (s) => ({ ...s, items: s.items.map((it) => (it.id === id ? { ...it, likes, liked } : it)) })
       setHistory(patch)
       setGallery(patch)
     } catch (e) { console.error('좋아요 에러:', e) }
@@ -46,7 +53,7 @@ export default function MainApp() {
     if (!window.confirm(dict.deleteConfirm)) return
     try {
       await deleteOutfit(id)
-      const remove = (arr) => arr.filter((it) => it.id !== id)
+      const remove = (s) => ({ ...s, items: s.items.filter((it) => it.id !== id) })
       setHistory(remove)
       setGallery(remove)
     } catch (e) { console.error('삭제 에러:', e) }
@@ -58,9 +65,9 @@ export default function MainApp() {
 
       {tab === 'upload' && <UploadTab onAnalyzed={loadHistory} />}
       {tab === 'history' && (
-        <HistoryTab items={history} onLike={handleLike} onDelete={handleDelete} />
+        <HistoryTab data={history} onLike={handleLike} onDelete={handleDelete} />
       )}
-      {tab === 'gallery' && <GalleryTab items={gallery} onLike={handleLike} />}
+      {tab === 'gallery' && <GalleryTab data={gallery} onLike={handleLike} />}
 
       <BottomNav tab={tab} onSwitch={switchTab} />
     </>

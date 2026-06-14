@@ -8,6 +8,10 @@ const sqlite3 = require('sqlite3').verbose();
 const session = require('express-session');
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
+const sharp = require('sharp');                 // 이미지 리사이즈/압축
+const helmet = require('helmet');               // 보안 HTTP 헤더
+const rateLimit = require('express-rate-limit'); // 요청 빈도 제한
+const SQLiteStore = require('connect-sqlite3')(session); // 세션을 파일 DB에 저장
 
 const app = express();
 // Nginx(HTTPS) 리버스 프록시 뒤에서 동작한다. X-Forwarded-Proto 를 신뢰해야
@@ -58,8 +62,22 @@ db.serialize(() => {
     )`);
 });
 
+// 보안 HTTP 헤더 (CSP는 외부 CDN 폰트/스타일을 막을 수 있어 끔 — 나머지 헤더는 적용)
+app.use(helmet({ contentSecurityPolicy: false }));
+
+// AI 분석은 비용이 드는 외부 호출이라 남용 방지용 레이트리밋
+const analyzeLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1분
+    max: 10,             // IP당 분당 10회
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: '요청이 너무 많습니다. 잠시 후 다시 시도해주세요.' },
+});
+
 // 2. 세션 및 패스포트 설정 (문지기)
 app.use(session({
+    // 세션을 메모리가 아닌 파일 DB(sessions.db)에 저장 → 서버 재시작해도 로그인 유지
+    store: new SQLiteStore({ db: 'sessions.db', dir: __dirname }),
     secret: process.env.SESSION_SECRET || "change-this-secret",
     resave: false,
     saveUninitialized: false,
@@ -101,13 +119,10 @@ try {
     console.warn(`⚠️ 업로드 폴더를 준비하지 못했습니다 (${UPLOAD_DIR}): ${e.message}`);
     console.warn('   외장 HDD 마운트 상태를 확인하세요. 업로드는 실패할 수 있지만 서버는 계속 동작합니다.');
 }
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => cb(null, UPLOAD_DIR),
-    filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname),
-});
+// 메모리에 받아서 sharp로 리사이즈/압축한 뒤 디스크에 저장한다.
 const upload = multer({
-    storage,
-    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB 제한
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024 }, // 업로드 원본 10MB 제한
     fileFilter: (req, file, cb) => {
         if (file.mimetype.startsWith('image/')) return cb(null, true);
         cb(new Error('이미지 파일만 업로드할 수 있습니다.'));
@@ -208,7 +223,7 @@ app.delete('/api/outfits/:id', (req, res) => {
 });
 
 // 분석 및 저장 API
-app.post('/analyze-outfit', upload.single('selfie'), async (req, res) => {
+app.post('/analyze-outfit', analyzeLimiter, upload.single('selfie'), async (req, res) => {
     console.log("분석 요청 수신! 위치 정보 확인중...");
 
     try {
@@ -218,6 +233,12 @@ app.post('/analyze-outfit', upload.single('selfie'), async (req, res) => {
         const { lat, lon } = req.body;
         const lang = req.body.lang === 'English' ? 'English' : 'Korean'; // 답변 언어
         const isPublic = req.body.isPublic === 'true' ? 1 : 0;            // 커뮤니티 공개
+
+        // 현재 계절 (서버 날짜 기준) — 시즌 트렌드 추천에 사용
+        const month = new Date().getMonth() + 1;
+        const season = lang === 'English'
+            ? (month >= 3 && month <= 5 ? 'spring' : month >= 6 && month <= 8 ? 'summer' : month >= 9 && month <= 11 ? 'autumn' : 'winter')
+            : (month >= 3 && month <= 5 ? '봄' : month >= 6 && month <= 8 ? '여름' : month >= 9 && month <= 11 ? '가을' : '겨울');
         const weatherApiKey = process.env.WEATHER_API_KEY;
 
         let currentLocation = "인천"; // 기본값
@@ -244,11 +265,20 @@ app.post('/analyze-outfit', upload.single('selfie'), async (req, res) => {
             }
         }
 
-        // 4. 하드디스크에서 사진 읽기
+        // 4. 이미지 최적화: EXIF 회전 보정 + 1080px 리사이즈 + JPEG 압축 후 저장
+        //    (원본 수 MB → 보통 수백 KB로 줄어 갤러리 로딩이 빨라짐)
+        const filename = `${Date.now()}.jpg`;
+        const optimized = await sharp(req.file.buffer)
+            .rotate() // 폰 사진 방향(EXIF) 자동 보정
+            .resize({ width: 1080, withoutEnlargement: true })
+            .jpeg({ quality: 80 })
+            .toBuffer();
+        fs.writeFileSync(path.join(UPLOAD_DIR, filename), optimized);
+
         const imageParts = [{
             inlineData: {
-                data: fs.readFileSync(req.file.path).toString('base64'),
-                mimeType: req.file.mimetype,
+                data: optimized.toString('base64'),
+                mimeType: 'image/jpeg',
             },
         }];
 
@@ -256,7 +286,7 @@ app.post('/analyze-outfit', upload.single('selfie'), async (req, res) => {
         const model = genAI.getGenerativeModel({ model: 'gemini-flash-lite-latest' });
         const prompt = `
 너는 전문 패션 스타일리스트야. 첨부된 이미지는 사용자의 오늘 옷차림 거울 셀카야.
-현재 위치는 ${currentLocation}이고, 날씨는 [${currentWeather}]이야.
+현재 위치는 ${currentLocation}, 날씨는 [${currentWeather}], 지금은 ${season} 시즌이야.
 
 반드시 아래 형식 그대로 답변해줘. 각 섹션 사이에는 빈 줄(개행 2번)을 넣어.
 - 섹션 제목 줄은 "이모지 + 제목"만 쓰고, 내용은 다음 줄부터 써.
@@ -274,6 +304,9 @@ app.post('/analyze-outfit', upload.single('selfie'), async (req, res) => {
 - (보완하면 좋을 아이템 2)
 - (보완하면 좋을 아이템 3)
 
+🌟 시즌 트렌드
+(요즘 ${season} 시즌에 유행하는 스타일을 반영해, 추가로 시도해보면 좋을 아이템이나 포인트 한 가지)
+
 💡 한 줄 요약
 (오늘 코디의 핵심을 한 문장으로)
 
@@ -285,7 +318,7 @@ IMPORTANT: 위 형식과 이모지는 그대로 두되, 모든 글(제목·내�
 
         // 6. DB에 저장!
         const userId = req.user ? req.user.id : 'anonymous'; // 로그인 안 했으면 익명
-        const imagePath = `/uploads/${req.file.filename}`;
+        const imagePath = `/uploads/${filename}`;
         db.run(`INSERT INTO outfits (user_id, image_path, analysis, is_public) VALUES (?, ?, ?, ?)`,
             [userId, imagePath, responseText, isPublic], function (err) {
                 if (!err) console.log(`${this.lastID}번 코디(위치: ${currentLocation}, 공개: ${isPublic}) 저장 완료!`);

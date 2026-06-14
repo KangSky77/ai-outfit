@@ -24,6 +24,8 @@ const translations = {
     deleteConfirm: '정말 삭제하시겠습니까?',
     portfolioShow: '개발 이야기 보기',
     portfolioHide: '개발 이야기 숨기기',
+    listLoading: '불러오는 중...',
+    listError: '불러오지 못했어요. 잠시 후 다시 시도해주세요.',
   },
   en: {
     loginDesc: 'Your smart styling guide powered by AI',
@@ -49,6 +51,8 @@ const translations = {
     deleteConfirm: 'Delete this record?',
     portfolioShow: 'About this project',
     portfolioHide: 'Hide project story',
+    listLoading: 'Loading...',
+    listError: 'Failed to load. Please try again.',
   },
 }
 
