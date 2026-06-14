@@ -3,6 +3,7 @@ import { dict } from '../i18n.js'
 import { analyzeOutfit, getUserLocation } from '../api.js'
 import PortfolioCard from './PortfolioCard.jsx'
 import AnalysisResult from './AnalysisResult.jsx'
+import ShareButton from './ShareButton.jsx'
 
 export default function UploadTab({ onAnalyzed }) {
   const [file, setFile] = useState(null)
@@ -83,7 +84,12 @@ export default function UploadTab({ onAnalyzed }) {
         {result && (
           <div className={`result-card ${result.error ? 'error' : ''}`}>
             <h4>{dict.resultLabel}</h4>
-            {result.error ? result.error : <AnalysisResult text={result.text} />}
+            {result.error ? result.error : (
+              <>
+                <AnalysisResult text={result.text} />
+                <ShareButton text={result.text} />
+              </>
+            )}
           </div>
         )}
       </div>

@@ -26,6 +26,10 @@ const translations = {
     portfolioHide: '개발 이야기 숨기기',
     listLoading: '불러오는 중...',
     listError: '불러오지 못했어요. 잠시 후 다시 시도해주세요.',
+    share: '공유하기',
+    copied: '클립보드에 복사됐어요!',
+    searchPlaceholder: '기록 검색 (내용·날짜)',
+    noSearchResult: '검색 결과가 없어요.',
   },
   en: {
     loginDesc: 'Your smart styling guide powered by AI',
@@ -53,6 +57,10 @@ const translations = {
     portfolioHide: 'Hide project story',
     listLoading: 'Loading...',
     listError: 'Failed to load. Please try again.',
+    share: 'Share',
+    copied: 'Copied to clipboard!',
+    searchPlaceholder: 'Search records (text · date)',
+    noSearchResult: 'No matching records.',
   },
 }
 

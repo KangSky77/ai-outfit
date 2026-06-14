@@ -1,10 +1,12 @@
 import { dict } from '../i18n.js'
+import ThemeToggle from './ThemeToggle.jsx'
 
 const TABS = ['history', 'upload', 'gallery']
 
 export default function Header({ tab, onSwitch }) {
   return (
     <header>
+      <ThemeToggle />
       <h2>{dict.headerTitle}</h2>
       <nav className="desktop-nav">
         {TABS.map((t) => (

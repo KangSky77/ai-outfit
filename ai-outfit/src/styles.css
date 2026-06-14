@@ -1,9 +1,35 @@
 :root {
   --bg-color: #f9f7f3;
+  --card-bg: #ffffff;
+  --muted-bg: #f1f3f5;
+  --border: #eeeeee;
   --text-dark: #3e362e;
   --text-light: #8a817c;
-  --card-bg: #ffffff;
-  --primary: #4a3f36;
+  --text-muted: #999999;
+  --primary: #4a3f36;        /* 채워진 버튼/아이콘 배경 (흰 글자 위) */
+  --accent-text: #4a3f36;    /* 어두운 배경 위에서도 읽히는 강조 텍스트 */
+  --like-hover: #ffe3e3;
+  --hover-bg: #efeae3;
+  --nav-bg: rgba(255, 255, 255, 0.7);
+  --nav-border: rgba(255, 255, 255, 0.5);
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --bg-color: #17140f;
+  --card-bg: #221d18;
+  --muted-bg: #2e2720;
+  --border: #38302a;
+  --text-dark: #ece5db;
+  --text-light: #a99e90;
+  --text-muted: #8a7f72;
+  --primary: #6f5d4c;
+  --accent-text: #d8c4a0;
+  --like-hover: #4a2e2e;
+  --hover-bg: #2e2720;
+  --nav-bg: rgba(34, 29, 24, 0.75);
+  --nav-border: rgba(255, 255, 255, 0.08);
+  color-scheme: dark;
 }
 
 body {
@@ -16,6 +42,7 @@ body {
   padding: 0;
   color: var(--text-dark);
   overflow-x: hidden;
+  transition: background 0.2s, color 0.2s;
 }
 
 /* --- [1. 로그인 화면] --- */
@@ -28,16 +55,16 @@ body {
   box-sizing: border-box;
 }
 .login-card {
-  background: white;
+  background: var(--card-bg);
   padding: 40px 30px;
   border-radius: 25px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.02);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.06);
   max-width: 350px;
   width: 100%;
   text-align: center;
 }
 .login-icon-circle {
-  background: #f1f3f5;
+  background: var(--muted-bg);
   width: 64px;
   height: 64px;
   border-radius: 50%;
@@ -45,6 +72,7 @@ body {
   align-items: center;
   justify-content: center;
   margin-bottom: 24px;
+  color: var(--accent-text);
 }
 .login-card h1 {
   font-size: 26px;
@@ -52,14 +80,14 @@ body {
 }
 .login-card .login-desc {
   font-size: 13px;
-  color: #999;
+  color: var(--text-muted);
   margin: 0;
 }
 .btn-google {
-  background: white;
+  background: var(--card-bg);
   color: var(--text-dark);
   padding: 12px;
-  border: 1px solid #eee;
+  border: 1px solid var(--border);
   border-radius: 30px;
   font-weight: 600;
   cursor: pointer;
@@ -91,6 +119,16 @@ header h2 {
 .logout-btn {
   position: absolute;
   right: 20px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-dark);
+  padding: 0;
+  display: flex;
+}
+.theme-toggle {
+  position: absolute;
+  left: 20px;
   background: none;
   border: none;
   cursor: pointer;
@@ -147,8 +185,8 @@ header h2 {
   background: var(--card-bg);
   border-radius: 30px;
   padding: 60px 20px;
-  box-shadow: 0 4px 25px rgba(0, 0, 0, 0.03);
-  border: 1px solid #f2f2f2;
+  box-shadow: 0 4px 25px rgba(0, 0, 0, 0.05);
+  border: 1px solid var(--border);
   cursor: pointer;
   margin-top: 20px;
 }
@@ -163,7 +201,7 @@ header h2 {
 }
 .camera-icon-circle {
   background: var(--primary);
-  color: white;
+  color: #fff;
   width: 64px;
   height: 64px;
   border-radius: 50%;
@@ -184,7 +222,7 @@ header h2 {
   margin-top: 20px;
   padding: 12px 35px;
   background: var(--primary);
-  color: white;
+  color: #fff;
   border-radius: 30px;
   border: none;
   font-weight: bold;
@@ -205,13 +243,14 @@ header h2 {
 
 .result-card {
   margin-top: 30px;
-  background: white;
+  background: var(--card-bg);
   padding: 25px;
   border-radius: 20px;
   text-align: left; /* 한국어 본문은 왼쪽 정렬이 가장 자연스러움 */
   word-break: keep-all;
   font-size: 14px;
   line-height: 1.7;
+  box-shadow: 0 4px 25px rgba(0, 0, 0, 0.05);
 }
 .result-card h4 {
   margin: 0 0 15px 0;
@@ -227,7 +266,7 @@ header h2 {
 .result-section-title {
   font-weight: 700;
   font-size: 15px;
-  color: var(--primary);
+  color: var(--accent-text);
   margin-bottom: 7px;
 }
 .result-section p {
@@ -243,7 +282,31 @@ header h2 {
   margin-bottom: 3px;
 }
 .result-card.error {
-  color: #c0392b;
+  color: #e07a6f;
+}
+
+/* 공유 버튼 */
+.share-btn {
+  margin-top: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--muted-bg);
+  color: var(--text-dark);
+  border: none;
+  border-radius: 20px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: 0.2s;
+}
+.share-btn:hover {
+  background: var(--hover-bg);
+}
+.share-btn .material-symbols-outlined {
+  font-size: 18px;
 }
 
 .section-title {
@@ -253,9 +316,30 @@ header h2 {
   text-align: left;
 }
 
+/* 기록 검색 */
+.history-search {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 11px 16px;
+  margin-bottom: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card-bg);
+  color: var(--text-dark);
+  font-size: 14px;
+  font-family: inherit;
+}
+.history-search::placeholder {
+  color: var(--text-muted);
+}
+.history-search:focus {
+  outline: none;
+  border-color: var(--accent-text);
+}
+
 /* 기록 리스트 */
 .history-list-item {
-  background: white;
+  background: var(--card-bg);
   border-radius: 15px;
   padding: 12px;
   display: flex;
@@ -277,7 +361,7 @@ header h2 {
 }
 .history-list-item .history-date {
   font-size: 12px;
-  color: #aaa;
+  color: var(--text-muted);
 }
 .history-main {
   display: flex;
@@ -297,7 +381,7 @@ header h2 {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  background: #f1f3f5;
+  background: var(--muted-bg);
   border: none;
   border-radius: 20px;
   padding: 6px 12px;
@@ -308,12 +392,12 @@ header h2 {
   transition: 0.2s;
 }
 .like-btn:hover {
-  background: #ffe3e3;
+  background: var(--like-hover);
 }
 .delete-btn {
   background: none;
   border: none;
-  color: #c0392b;
+  color: #e07a6f;
   cursor: pointer;
   font-size: 22px;
   line-height: 1;
@@ -352,8 +436,8 @@ header h2 {
 }
 .portfolio-toggle {
   background: transparent;
-  border: 1px solid var(--primary);
-  color: var(--primary);
+  border: 1px solid var(--accent-text);
+  color: var(--accent-text);
   font-size: 13px;
   padding: 8px 14px;
   border-radius: 20px;
@@ -364,7 +448,7 @@ header h2 {
   font-family: inherit;
 }
 .portfolio-toggle:hover {
-  background: #efeae3;
+  background: var(--hover-bg);
 }
 .portfolio-card {
   background: linear-gradient(135deg, #4a3f36, #2c2520);
@@ -443,7 +527,7 @@ header h2 {
   animation: fadeIn 0.2s ease;
 }
 .modal-card {
-  background: white;
+  background: var(--card-bg);
   border-radius: 24px;
   padding: 24px;
   max-width: 440px;
@@ -464,7 +548,7 @@ header h2 {
   border: none;
   font-size: 26px;
   line-height: 1;
-  color: #aaa;
+  color: var(--text-muted);
   cursor: pointer;
 }
 .modal-img {
@@ -476,7 +560,7 @@ header h2 {
 }
 .modal-date {
   font-size: 12px;
-  color: #aaa;
+  color: var(--text-muted);
   margin: 12px 0 2px;
 }
 .modal-title {
@@ -491,16 +575,16 @@ header h2 {
   transform: translateX(-50%);
   width: 85%;
   max-width: 350px;
-  background: rgba(255, 255, 255, 0.7);
+  background: var(--nav-bg);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.5);
+  border: 1px solid var(--nav-border);
   border-radius: 35px;
   display: flex;
   justify-content: space-around;
   padding: 10px 0;
   z-index: 1000;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
 }
 .nav-item {
   display: flex;
@@ -548,6 +632,10 @@ header h2 {
   }
   .logout-btn {
     position: static;
+  }
+  .theme-toggle {
+    position: static;
+    margin-right: 12px;
   }
 }
 
