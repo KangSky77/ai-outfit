@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://ai-outfit.duckdns.org/sitemap.xml

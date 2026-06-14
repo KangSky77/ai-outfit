@@ -1,0 +1,58 @@
+// 브라우저 언어에 따라 한국어/영어를 자동 선택한다.
+const translations = {
+  ko: {
+    loginDesc: '나만을 위한 스마트 스타일링 가이드',
+    loginBtn: 'Google 계정으로 시작',
+    headerTitle: '나의 옷장',
+    uploadTitle: '코디 분석하기',
+    uploadDesc: '터치해서 사진을 업로드하거나 촬영하세요.',
+    selected: '사진 선택됨',
+    publicCheck: '이 사진을 커뮤니티에 공개하기 🌍',
+    analyzeBtn: '분석 시작 🚀',
+    loading: '✨ AI가 분석 중...',
+    historyTitle: '나의 기록',
+    galleryTitle: '커뮤니티 갤러리',
+    navHistory: '기록',
+    navUpload: '업로드',
+    navGallery: '갤러리',
+    historyItemTitle: 'AI 스타일 분석',
+    resultLabel: '✨ 분석 결과',
+    emptyHistory: '아직 기록이 없어요. 첫 코디를 분석해보세요!',
+    emptyGallery: '아직 공개된 코디가 없어요.',
+    errorPrefix: '오류',
+    networkError: '서버 통신 에러가 발생했습니다.',
+    deleteConfirm: '정말 삭제하시겠습니까?',
+    portfolioShow: '개발 이야기 보기',
+    portfolioHide: '개발 이야기 숨기기',
+  },
+  en: {
+    loginDesc: 'Your smart styling guide powered by AI',
+    loginBtn: 'Continue with Google',
+    headerTitle: 'MY CLOSET',
+    uploadTitle: 'Analyze Outfit',
+    uploadDesc: 'Tap to upload or take a photo of your look.',
+    selected: 'Selected',
+    publicCheck: 'Share this to the community gallery 🌍',
+    analyzeBtn: 'Start Analysis 🚀',
+    loading: '✨ AI is analyzing...',
+    historyTitle: 'My History',
+    galleryTitle: 'Community Looks',
+    navHistory: 'History',
+    navUpload: 'Upload',
+    navGallery: 'Gallery',
+    historyItemTitle: 'AI Analysis',
+    resultLabel: '✨ Result',
+    emptyHistory: 'No records yet. Analyze your first outfit!',
+    emptyGallery: 'No public looks yet.',
+    errorPrefix: 'Error',
+    networkError: 'A network error occurred.',
+    deleteConfirm: 'Delete this record?',
+    portfolioShow: 'About this project',
+    portfolioHide: 'Hide project story',
+  },
+}
+
+export const userLang = navigator.language.startsWith('ko') ? 'ko' : 'en'
+export const dict = translations[userLang]
+// 서버 프롬프트에 넘길 언어 라벨
+export const serverLang = userLang === 'ko' ? 'Korean' : 'English'

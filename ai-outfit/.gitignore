@@ -1,0 +1,11 @@
+node_modules/
+.env
+*.db
+outfit_uploads/
+dist/
+
+# 업로드된 사용자 사진 (로컬/HDD에만 보관)
+public/uploads/
+
+# 로컬 에이전트 작업물 / worktree
+.claude/

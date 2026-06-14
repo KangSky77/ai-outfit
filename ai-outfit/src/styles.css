@@ -1,0 +1,459 @@
+:root {
+  --bg-color: #f9f7f3;
+  --text-dark: #3e362e;
+  --text-light: #8a817c;
+  --card-bg: #ffffff;
+  --primary: #4a3f36;
+}
+
+body {
+  font-family: 'Pretendard', sans-serif;
+  background: var(--bg-color);
+  margin: 0;
+  padding: 0;
+  color: var(--text-dark);
+  overflow-x: hidden;
+}
+
+/* --- [1. 로그인 화면] --- */
+#loginSection {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  padding: 20px;
+  box-sizing: border-box;
+}
+.login-card {
+  background: white;
+  padding: 40px 30px;
+  border-radius: 25px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.02);
+  max-width: 350px;
+  width: 100%;
+  text-align: center;
+}
+.login-icon-circle {
+  background: #f1f3f5;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 24px;
+}
+.login-card h1 {
+  font-size: 26px;
+  margin: 0 0 8px 0;
+}
+.login-card .login-desc {
+  font-size: 13px;
+  color: #999;
+  margin: 0;
+}
+.btn-google {
+  background: white;
+  color: var(--text-dark);
+  padding: 12px;
+  border: 1px solid #eee;
+  border-radius: 30px;
+  font-weight: 600;
+  cursor: pointer;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 14px;
+  margin-top: 25px;
+}
+
+/* --- [2. 헤더] --- */
+header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 15px 20px;
+  position: relative;
+  background: var(--bg-color);
+  z-index: 100;
+}
+header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+}
+.logout-btn {
+  position: absolute;
+  right: 20px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-dark);
+  padding: 0;
+  display: flex;
+}
+
+.desktop-nav {
+  display: none;
+  gap: 30px;
+  margin: 0 40px;
+}
+.desktop-nav button {
+  background: none;
+  border: none;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-light);
+  cursor: pointer;
+  font-family: inherit;
+  padding: 0 0 4px 0;
+}
+.desktop-nav button.active {
+  color: var(--text-dark);
+  border-bottom: 2px solid var(--text-dark);
+}
+
+/* --- [3. 메인 콘텐츠] --- */
+.tab-content {
+  padding: 10px 20px;
+  animation: fadeIn 0.3s ease;
+  text-align: center;
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.upload-section {
+  max-width: 600px;
+  margin: 0 auto;
+}
+.upload-section h1 {
+  font-size: 26px;
+  margin: 30px 0 10px 0;
+}
+.upload-section .upload-desc {
+  color: var(--text-light);
+  font-size: 14px;
+  margin-bottom: 30px;
+}
+.upload-card {
+  background: var(--card-bg);
+  border-radius: 30px;
+  padding: 60px 20px;
+  box-shadow: 0 4px 25px rgba(0, 0, 0, 0.03);
+  border: 1px solid #f2f2f2;
+  cursor: pointer;
+  margin-top: 20px;
+}
+.upload-card h3 {
+  font-size: 18px;
+  margin: 0 0 5px 0;
+}
+.upload-card p {
+  font-size: 13px;
+  color: var(--text-light);
+  margin: 0;
+}
+.camera-icon-circle {
+  background: var(--primary);
+  color: white;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+.public-check-row {
+  font-size: 13px;
+  margin-top: 25px;
+}
+.public-check-row input {
+  vertical-align: middle;
+}
+.btn-analyze {
+  margin-top: 20px;
+  padding: 12px 35px;
+  background: var(--primary);
+  color: white;
+  border-radius: 30px;
+  border: none;
+  font-weight: bold;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 15px;
+}
+.btn-analyze:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.loading-spinner {
+  margin: 25px 0;
+  color: var(--text-light);
+  font-weight: 600;
+}
+
+.result-card {
+  margin-top: 30px;
+  background: white;
+  padding: 25px;
+  border-radius: 20px;
+  text-align: left;
+  font-size: 14px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+.result-card h4 {
+  margin: 0 0 15px 0;
+}
+.result-card.error {
+  color: #c0392b;
+}
+
+.section-title {
+  font-size: 20px;
+  font-weight: 800;
+  margin-bottom: 20px;
+  text-align: left;
+}
+
+/* 기록 리스트 */
+.history-list-item {
+  background: white;
+  border-radius: 15px;
+  padding: 12px;
+  display: flex;
+  gap: 15px;
+  align-items: center;
+  margin-bottom: 12px;
+  text-align: left;
+}
+.history-list-item img {
+  width: 60px;
+  height: 60px;
+  border-radius: 10px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.history-list-item .history-title {
+  font-weight: 700;
+  font-size: 14px;
+}
+.history-list-item .history-date {
+  font-size: 12px;
+  color: #aaa;
+}
+.history-list-item .item-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.like-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #f1f3f5;
+  border: none;
+  border-radius: 20px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-dark);
+  font-family: inherit;
+  transition: 0.2s;
+}
+.like-btn:hover {
+  background: #ffe3e3;
+}
+.delete-btn {
+  background: none;
+  border: none;
+  color: #c0392b;
+  cursor: pointer;
+  font-size: 22px;
+  line-height: 1;
+  padding: 2px 8px;
+}
+
+/* 갤러리 좋아요 오버레이 */
+.grid-item {
+  position: relative;
+}
+.grid-item .like-overlay {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  background: rgba(0, 0, 0, 0.55);
+  color: white;
+  border: none;
+  padding: 5px 10px;
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: 0.2s;
+}
+.grid-item .like-overlay:hover {
+  background: rgba(220, 50, 50, 0.75);
+}
+
+/* 포트폴리오 토글 카드 */
+.portfolio-wrap {
+  text-align: center;
+  margin-top: 10px;
+}
+.portfolio-toggle {
+  background: transparent;
+  border: 1px solid var(--primary);
+  color: var(--primary);
+  font-size: 13px;
+  padding: 8px 14px;
+  border-radius: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.portfolio-toggle:hover {
+  background: #efeae3;
+}
+.portfolio-card {
+  background: linear-gradient(135deg, #4a3f36, #2c2520);
+  color: white;
+  text-align: left;
+  border-radius: 20px;
+  padding: 24px;
+  margin-top: 15px;
+}
+.portfolio-card h3 {
+  margin: 0 0 10px 0;
+  color: #d4c7b0;
+}
+.portfolio-card p {
+  font-size: 14px;
+  opacity: 0.9;
+  line-height: 1.6;
+  margin: 0 0 14px 0;
+}
+.tech-tags {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.tech-tag {
+  background: rgba(255, 255, 255, 0.18);
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: bold;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+/* 커뮤니티 갤러리 */
+.masonry-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+.grid-item img {
+  width: 100%;
+  border-radius: 12px;
+  object-fit: cover;
+  display: block;
+}
+
+.empty-state {
+  color: var(--text-light);
+  font-size: 14px;
+  padding: 40px 0;
+  text-align: center;
+}
+
+/* --- [4. 하단 리퀴드 글래스 바] --- */
+.bottom-nav {
+  position: fixed;
+  bottom: 25px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 85%;
+  max-width: 350px;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 35px;
+  display: flex;
+  justify-content: space-around;
+  padding: 10px 0;
+  z-index: 1000;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.05);
+}
+.nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-light);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  gap: 4px;
+}
+.nav-item.active {
+  color: var(--text-dark);
+}
+.nav-item .material-symbols-outlined {
+  font-size: 28px !important;
+}
+.nav-item .nav-label {
+  font-size: 10px !important;
+  font-weight: 500;
+}
+.nav-item.active .nav-label {
+  font-weight: 700;
+}
+
+/* --- [5. 반응형] --- */
+@media (min-width: 768px) {
+  header {
+    justify-content: space-between;
+    padding: 25px 10%;
+  }
+  .desktop-nav {
+    display: flex;
+  }
+  .bottom-nav {
+    display: none !important;
+  }
+  .tab-content {
+    padding: 40px 10%;
+  }
+  .masonry-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+  .logout-btn {
+    position: static;
+  }
+}
+
+@media (max-width: 767px) {
+  .app-container {
+    padding-bottom: 100px;
+  }
+  .upload-card {
+    padding: 50px 20px;
+  }
+}
