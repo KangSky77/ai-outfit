@@ -49,6 +49,13 @@ db.serialize(() => {
     });
     addColumn(`ALTER TABLE outfits ADD COLUMN is_public INTEGER DEFAULT 0`); // 커뮤니티 공개
     addColumn(`ALTER TABLE outfits ADD COLUMN likes INTEGER DEFAULT 0`);     // 좋아요 수
+
+    // 좋아요 중복 방지: 유저-코디 쌍을 기록 (PRIMARY KEY로 같은 사람이 같은 글 두 번 못 누름)
+    db.run(`CREATE TABLE IF NOT EXISTS outfit_likes (
+        user_id TEXT,
+        outfit_id INTEGER,
+        PRIMARY KEY (user_id, outfit_id)
+    )`);
 });
 
 // 2. 세션 및 패스포트 설정 (문지기)
@@ -129,32 +136,57 @@ app.get('/api/user', (req, res) => res.json(req.user || null));
 // DB에서 내 기록 다 가져오기 API
 app.get('/api/history', (req, res) => {
     const userId = req.user ? req.user.id : 'anonymous';
-    db.all(`SELECT * FROM outfits WHERE user_id = ? ORDER BY created_at DESC`, [userId], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json(rows);
-    });
-});
-
-// 커뮤니티에 공개된 코디들 (모든 유저 공통, likes 포함)
-app.get('/api/public-gallery', (req, res) => {
+    // liked: 현재 유저가 이 코디에 좋아요를 눌렀는지 (0/1)
     db.all(
-        `SELECT id, image_path, analysis, likes, created_at FROM outfits
-         WHERE is_public = 1 ORDER BY created_at DESC LIMIT 50`,
-        [], (err, rows) => {
+        `SELECT o.*,
+            EXISTS(SELECT 1 FROM outfit_likes l WHERE l.outfit_id = o.id AND l.user_id = ?) AS liked
+         FROM outfits o WHERE o.user_id = ? ORDER BY o.created_at DESC`,
+        [userId, userId], (err, rows) => {
             if (err) return res.status(500).json({ error: err.message });
             res.json(rows);
         });
 });
 
-// 좋아요 +1 (누구나 가능) → 갱신된 likes 반환
-app.post('/api/outfits/:id/like', (req, res) => {
-    const { id } = req.params;
-    db.run(`UPDATE outfits SET likes = likes + 1 WHERE id = ?`, [id], (err) => {
-        if (err) return res.status(500).json({ error: err.message });
-        db.get(`SELECT likes FROM outfits WHERE id = ?`, [id], (err2, row) => {
-            if (err2 || !row) return res.status(404).json({ error: '데이터 없음' });
-            res.json({ likes: row.likes });
+// 커뮤니티에 공개된 코디들 (모든 유저 공통, likes 포함)
+app.get('/api/public-gallery', (req, res) => {
+    const userId = req.user ? req.user.id : null;
+    db.all(
+        `SELECT o.id, o.image_path, o.analysis, o.likes, o.created_at,
+            EXISTS(SELECT 1 FROM outfit_likes l WHERE l.outfit_id = o.id AND l.user_id = ?) AS liked
+         FROM outfits o WHERE o.is_public = 1 ORDER BY o.created_at DESC LIMIT 50`,
+        [userId], (err, rows) => {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json(rows);
         });
+});
+
+// 좋아요 토글 (로그인 유저 1회, 다시 누르면 취소) → { likes, liked }
+app.post('/api/outfits/:id/like', (req, res) => {
+    if (!req.user) return res.status(401).json({ error: '로그인이 필요합니다.' });
+    const outfitId = req.params.id;
+    const userId = req.user.id;
+
+    // 갱신된 likes 수를 읽어서 응답하는 마무리 함수
+    const finish = (liked) => db.get(`SELECT likes FROM outfits WHERE id = ?`, [outfitId], (e, row) => {
+        if (e || !row) return res.status(404).json({ error: '데이터 없음' });
+        res.json({ likes: row.likes, liked });
+    });
+
+    db.get(`SELECT 1 FROM outfit_likes WHERE user_id = ? AND outfit_id = ?`, [userId, outfitId], (err, already) => {
+        if (err) return res.status(500).json({ error: err.message });
+        if (already) {
+            // 이미 눌렀음 → 취소
+            db.run(`DELETE FROM outfit_likes WHERE user_id = ? AND outfit_id = ?`, [userId, outfitId], (e) => {
+                if (e) return res.status(500).json({ error: e.message });
+                db.run(`UPDATE outfits SET likes = MAX(likes - 1, 0) WHERE id = ?`, [outfitId], () => finish(false));
+            });
+        } else {
+            // 처음 누름 → 좋아요
+            db.run(`INSERT INTO outfit_likes (user_id, outfit_id) VALUES (?, ?)`, [userId, outfitId], (e) => {
+                if (e) return res.status(500).json({ error: e.message });
+                db.run(`UPDATE outfits SET likes = likes + 1 WHERE id = ?`, [outfitId], () => finish(true));
+            });
+        }
     });
 });
 
@@ -223,14 +255,30 @@ app.post('/analyze-outfit', upload.single('selfie'), async (req, res) => {
         // 5. 제미나이에게 위치와 날씨 정보까지 포함해서 물어보기!
         const model = genAI.getGenerativeModel({ model: 'gemini-flash-lite-latest' });
         const prompt = `
-        너는 전문 패션 스타일리스트야. 첨부된 이미지는 사용자의 오늘 옷차림 거울 셀카야.
-        현재 위치는 ${currentLocation}이고, 날씨는 [${currentWeather}]이야.
-        1. 이 날씨에 이 옷차림이 적절한지 판단해줘.
-        2. 색상 조화와 핏 등 전체적인 스타일링을 평가해 줘
-        3. 아쉬운 점이 있다면 더 나은 아이템(예: 겉옷, 신발 등)을 추천해 줘.
-        답변은 친절하고 센스 있는 말투로 3~4줄로 요약해서 정리해 줘.
-        IMPORTANT: Write your entire answer in ${lang}.
-        `;
+너는 전문 패션 스타일리스트야. 첨부된 이미지는 사용자의 오늘 옷차림 거울 셀카야.
+현재 위치는 ${currentLocation}이고, 날씨는 [${currentWeather}]이야.
+
+반드시 아래 형식 그대로 답변해줘. 각 섹션 사이에는 빈 줄(개행 2번)을 넣어.
+- 섹션 제목 줄은 "이모지 + 제목"만 쓰고, 내용은 다음 줄부터 써.
+- "추천 아이템"은 반드시 "- " 로 시작하는 목록으로 써.
+- 각 내용은 친절하고 센스 있는 말투로 간결하게.
+
+👕 스타일 분석
+(색상 조화, 핏, 전체적인 인상을 2~3문장으로)
+
+🌤 날씨 평가
+(이 날씨에 이 옷차림이 적절한지 1~2문장으로)
+
+👟 추천 아이템
+- (보완하면 좋을 아이템 1)
+- (보완하면 좋을 아이템 2)
+- (보완하면 좋을 아이템 3)
+
+💡 한 줄 요약
+(오늘 코디의 핵심을 한 문장으로)
+
+IMPORTANT: 위 형식과 이모지는 그대로 두되, 모든 글(제목·내용)은 ${lang} 로 작성해줘.
+`;
 
         const result = await model.generateContent([prompt, ...imageParts]);
         const responseText = result.response.text();

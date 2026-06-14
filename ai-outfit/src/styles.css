@@ -9,6 +9,9 @@
 body {
   font-family: 'Pretendard', sans-serif;
   background: var(--bg-color);
+  /* 한글이 단어(어절) 단위로 줄바꿈되도록 — 모든 기기 공통으로 적용 */
+  word-break: keep-all;
+  overflow-wrap: anywhere;
   margin: 0;
   padding: 0;
   color: var(--text-dark);
@@ -205,13 +208,39 @@ header h2 {
   background: white;
   padding: 25px;
   border-radius: 20px;
-  text-align: left;
+  text-align: left; /* 한국어 본문은 왼쪽 정렬이 가장 자연스러움 */
+  word-break: keep-all;
   font-size: 14px;
   line-height: 1.7;
-  white-space: pre-wrap;
 }
 .result-card h4 {
   margin: 0 0 15px 0;
+}
+
+/* AI 분석 결과 — 섹션 단위 구조화 */
+.result-section {
+  margin-bottom: 18px;
+}
+.result-section:last-child {
+  margin-bottom: 0;
+}
+.result-section-title {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--primary);
+  margin-bottom: 7px;
+}
+.result-section p {
+  margin: 0 0 6px 0;
+  line-height: 1.7;
+}
+.result-section ul {
+  margin: 4px 0 0 0;
+  padding-left: 20px;
+}
+.result-section li {
+  line-height: 1.7;
+  margin-bottom: 3px;
 }
 .result-card.error {
   color: #c0392b;
@@ -249,6 +278,14 @@ header h2 {
 .history-list-item .history-date {
   font-size: 12px;
   color: #aaa;
+}
+.history-main {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
 }
 .history-list-item .item-actions {
   margin-left: auto;
@@ -379,6 +416,56 @@ header h2 {
   font-size: 14px;
   padding: 40px 0;
   text-align: center;
+}
+
+/* --- 기록 상세 모달 --- */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 2000;
+  animation: fadeIn 0.2s ease;
+}
+.modal-card {
+  background: white;
+  border-radius: 24px;
+  padding: 24px;
+  max-width: 440px;
+  width: 100%;
+  max-height: 85vh;
+  overflow-y: auto;
+  position: relative;
+  text-align: left;
+}
+.modal-close {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  background: none;
+  border: none;
+  font-size: 26px;
+  line-height: 1;
+  color: #aaa;
+  cursor: pointer;
+}
+.modal-img {
+  width: 100%;
+  max-height: 50vh;
+  object-fit: cover;
+  border-radius: 16px;
+  display: block;
+}
+.modal-date {
+  font-size: 12px;
+  color: #aaa;
+  margin: 12px 0 2px;
+}
+.modal-title {
+  margin: 6px 0 12px;
 }
 
 /* --- [4. 하단 리퀴드 글래스 바] --- */

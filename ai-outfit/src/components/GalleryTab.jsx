@@ -11,8 +11,11 @@ export default function GalleryTab({ items, onLike }) {
           {items.map((item) => (
             <div className="grid-item" key={item.id}>
               <img src={item.image_path} alt="" />
-              <button className="like-overlay" onClick={() => onLike(item.id)}>
-                ❤️ <span>{item.likes ?? 0}</span>
+              <button
+                className={`like-overlay ${item.liked ? 'liked' : ''}`}
+                onClick={() => onLike(item.id)}
+              >
+                {item.liked ? '❤️' : '🤍'} <span>{item.likes ?? 0}</span>
               </button>
             </div>
           ))}

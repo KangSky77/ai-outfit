@@ -31,11 +31,11 @@ export default function MainApp() {
     if (next === 'gallery') loadGallery()
   }, [loadHistory, loadGallery])
 
-  // 좋아요: 기록/갤러리 양쪽에서 해당 항목의 likes 를 갱신 (새로고침 없이)
+  // 좋아요 토글: likes 수와 liked 상태를 양쪽 목록에서 갱신 (새로고침 없이)
   const handleLike = useCallback(async (id) => {
     try {
-      const { likes } = await likeOutfit(id)
-      const patch = (arr) => arr.map((it) => (it.id === id ? { ...it, likes } : it))
+      const { likes, liked } = await likeOutfit(id)
+      const patch = (arr) => arr.map((it) => (it.id === id ? { ...it, likes, liked } : it))
       setHistory(patch)
       setGallery(patch)
     } catch (e) { console.error('좋아요 에러:', e) }
