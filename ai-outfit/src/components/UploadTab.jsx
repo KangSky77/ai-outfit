@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { dict } from '../i18n.js'
 import { analyzeOutfit, getUserLocation } from '../api.js'
-import PortfolioCard from './PortfolioCard.jsx'
 import AnalysisResult from './AnalysisResult.jsx'
 import ShareButton from './ShareButton.jsx'
 
@@ -37,7 +36,6 @@ export default function UploadTab({ onAnalyzed }) {
   return (
     <div className="tab-content">
       <div className="upload-section">
-        <PortfolioCard />
         <h1>{dict.uploadTitle}</h1>
         <p className="upload-desc">{dict.uploadDesc}</p>
 

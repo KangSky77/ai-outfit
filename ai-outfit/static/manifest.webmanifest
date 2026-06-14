@@ -2,6 +2,8 @@
   "name": "AI Closet | 스마트 스타일 가이드",
   "short_name": "AI Closet",
   "description": "거울 셀카를 올리면 날씨와 시즌 트렌드를 반영해 AI가 코디를 분석·추천해줘요.",
+  "id": "/",
+  "scope": "/",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f9f7f3",
