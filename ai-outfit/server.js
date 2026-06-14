@@ -339,6 +339,9 @@ app.get('/logout', (req, res, next) => {
     });
 });
 
-app.listen(port, () => {
-    console.log(`서버가 http://localhost:${port} 에서 실행 중입니다.`);
+// 127.0.0.1 에만 바인딩 → 외부에서 7704로 직접 접속 불가(반드시 Nginx HTTPS 경유).
+// (개발 등 외부 접근이 필요하면 HOST 환경변수로 0.0.0.0 지정 가능)
+const host = process.env.HOST || '127.0.0.1';
+app.listen(port, host, () => {
+    console.log(`서버가 http://${host}:${port} 에서 실행 중입니다.`);
 });
