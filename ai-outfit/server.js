@@ -339,9 +339,22 @@ app.get('/logout', (req, res, next) => {
     });
 });
 
-// 127.0.0.1 에만 바인딩 → 외부에서 7704로 직접 접속 불가(반드시 Nginx HTTPS 경유).
+// 보안: 외부에서 7704로 직접 접속하지 못하도록 루프백(localhost)에만 바인딩한다.
+// 단, nginx의 proxy_pass(localhost)가 환경에 따라 IPv6(::1)로 풀릴 수 있어
+// IPv4(127.0.0.1)와 IPv6(::1) 두 루프백 모두에 바인딩해야 502가 안 난다.
 // (개발 등 외부 접근이 필요하면 HOST 환경변수로 0.0.0.0 지정 가능)
-const host = process.env.HOST || '127.0.0.1';
-app.listen(port, host, () => {
-    console.log(`서버가 http://${host}:${port} 에서 실행 중입니다.`);
-});
+const http = require('http');
+const startOn = (addr) =>
+    http.createServer(app)
+        .listen(port, addr, () => {
+            const shown = addr.includes(':') ? `[${addr}]` : addr;
+            console.log(`서버가 http://${shown}:${port} 에서 실행 중입니다.`);
+        })
+        .on('error', (e) => console.warn(`${addr} 바인딩 생략: ${e.code}`));
+
+if (process.env.HOST) {
+    startOn(process.env.HOST);
+} else {
+    startOn('127.0.0.1'); // IPv4 루프백
+    startOn('::1');        // IPv6 루프백 (nginx가 localhost→::1 로 오는 경우)
+}
