@@ -12,6 +12,7 @@ const sharp = require('sharp');                 // 이미지 리사이즈/압축
 const helmet = require('helmet');               // 보안 HTTP 헤더
 const rateLimit = require('express-rate-limit'); // 요청 빈도 제한
 const SQLiteStore = require('connect-sqlite3')(session); // 세션을 파일 DB에 저장
+const crypto = require('crypto'); // 무작위 파일명 생성
 
 const app = express();
 // Nginx(HTTPS) 리버스 프록시 뒤에서 동작한다. X-Forwarded-Proto 를 신뢰해야
@@ -24,7 +25,7 @@ const isProd = process.env.NODE_ENV === 'production';
 // 0. 필수 환경변수 검사 (서버가 "왜 안 켜지는지" 명확히 알려주기)
 //    .env 가 없으면 passport 가 알 수 없는 스택트레이스를 뱉으며 죽는다.
 //    그 전에 사람이 읽을 수 있는 메시지로 바로 알려주고 종료한다.
-const REQUIRED_ENV = ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GEMINI_API_KEY'];
+const REQUIRED_ENV = ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GEMINI_API_KEY', 'SESSION_SECRET'];
 const missing = REQUIRED_ENV.filter((k) => !process.env[k]);
 if (missing.length > 0) {
     console.error('\n❌ 서버를 시작할 수 없습니다. 다음 환경변수가 .env 에 없습니다:');
@@ -78,7 +79,7 @@ const analyzeLimiter = rateLimit({
 app.use(session({
     // 세션을 메모리가 아닌 파일 DB(sessions.db)에 저장 → 서버 재시작해도 로그인 유지
     store: new SQLiteStore({ db: 'sessions.db', dir: __dirname }),
-    secret: process.env.SESSION_SECRET || "change-this-secret",
+    secret: process.env.SESSION_SECRET, // 필수 env 검사로 보장됨 (기본값 없음)
     resave: false,
     saveUninitialized: false,
     proxy: true,
@@ -91,6 +92,13 @@ app.use(session({
 }));
 app.use(passport.initialize());
 app.use(passport.session());
+
+// 로그인 필수 미들웨어 — 개인 데이터/비용이 드는 API를 서버에서도 보호한다.
+// (프런트뿐 아니라 서버에서 인증을 강제해야 비로그인 직접 호출을 막을 수 있음)
+const requireAuth = (req, res, next) => {
+    if (req.user) return next();
+    res.status(401).json({ error: '로그인이 필요합니다.' });
+};
 
 passport.use(new GoogleStrategy({
         clientID: process.env.GOOGLE_CLIENT_ID,
@@ -149,8 +157,8 @@ app.get('/auth/google/callback',
 app.get('/api/user', (req, res) => res.json(req.user || null));
 
 // DB에서 내 기록 다 가져오기 API
-app.get('/api/history', (req, res) => {
-    const userId = req.user ? req.user.id : 'anonymous';
+app.get('/api/history', requireAuth, (req, res) => {
+    const userId = req.user.id;
     // liked: 현재 유저가 이 코디에 좋아요를 눌렀는지 (0/1)
     db.all(
         `SELECT o.*,
@@ -176,8 +184,7 @@ app.get('/api/public-gallery', (req, res) => {
 });
 
 // 좋아요 토글 (로그인 유저 1회, 다시 누르면 취소) → { likes, liked }
-app.post('/api/outfits/:id/like', (req, res) => {
-    if (!req.user) return res.status(401).json({ error: '로그인이 필요합니다.' });
+app.post('/api/outfits/:id/like', requireAuth, (req, res) => {
     const outfitId = req.params.id;
     const userId = req.user.id;
 
@@ -206,9 +213,9 @@ app.post('/api/outfits/:id/like', (req, res) => {
 });
 
 // 내 코디 삭제 (본인 것만). 업로드 파일도 같이 지운다.
-app.delete('/api/outfits/:id', (req, res) => {
+app.delete('/api/outfits/:id', requireAuth, (req, res) => {
     const { id } = req.params;
-    const userId = req.user ? req.user.id : 'anonymous';
+    const userId = req.user.id;
     db.get(`SELECT image_path FROM outfits WHERE id = ? AND user_id = ?`, [id, userId], (err, row) => {
         if (err || !row) return res.status(404).json({ error: '기록 없음' });
         // image_path 는 "/uploads/파일명" → 실제 저장 폴더(UPLOAD_DIR) 기준으로 변환
@@ -217,15 +224,18 @@ app.delete('/api/outfits/:id', (req, res) => {
         try { if (fs.existsSync(realPath)) fs.unlinkSync(realPath); } catch (e) { /* 파일 없어도 무시 */ }
         db.run(`DELETE FROM outfits WHERE id = ? AND user_id = ?`, [id, userId], (err2) => {
             if (err2) return res.status(500).json({ error: err2.message });
+            // 이 코디에 달린 좋아요 기록도 함께 정리 (고아 데이터 방지)
+            db.run(`DELETE FROM outfit_likes WHERE outfit_id = ?`, [id]);
             res.json({ message: '삭제 완료' });
         });
     });
 });
 
 // 분석 및 저장 API
-app.post('/analyze-outfit', analyzeLimiter, upload.single('selfie'), async (req, res) => {
+app.post('/analyze-outfit', requireAuth, analyzeLimiter, upload.single('selfie'), async (req, res) => {
     console.log("분석 요청 수신! 위치 정보 확인중...");
 
+    let savedFilePath = null; // 실패 시 정리할 업로드 파일 경로
     try {
         if (!req.file) return res.status(400).json({ error: '이미지 업로드 실패.' });
 
@@ -253,8 +263,11 @@ app.post('/analyze-outfit', analyzeLimiter, upload.single('selfie'), async (req,
 
         // 3. 실제 날씨 가져오기 (날씨 키가 없거나 실패해도 분석은 계속 진행)
         if (weatherApiKey) {
+            // 날씨 API가 응답하지 않을 때 무한 대기하지 않도록 5초 타임아웃
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 5000);
             try {
-                const weatherRes = await fetch(weatherUrl);
+                const weatherRes = await fetch(weatherUrl, { signal: controller.signal });
                 const wData = await weatherRes.json();
                 if (weatherRes.ok) {
                     currentWeather = `온도: ${Math.round(wData.main.temp)}도, 상태: ${wData.weather[0].description}`;
@@ -262,18 +275,21 @@ app.post('/analyze-outfit', analyzeLimiter, upload.single('selfie'), async (req,
                 }
             } catch (err) {
                 console.error("날씨 호출 실패:", err.message);
+            } finally {
+                clearTimeout(timer);
             }
         }
 
         // 4. 이미지 최적화: EXIF 회전 보정 + 1080px 리사이즈 + JPEG 압축 후 저장
         //    (원본 수 MB → 보통 수백 KB로 줄어 갤러리 로딩이 빨라짐)
-        const filename = `${Date.now()}.jpg`;
+        const filename = `${crypto.randomUUID()}.jpg`; // 충돌·추측 방지용 무작위 파일명
         const optimized = await sharp(req.file.buffer)
             .rotate() // 폰 사진 방향(EXIF) 자동 보정
             .resize({ width: 1080, withoutEnlargement: true })
             .jpeg({ quality: 80 })
             .toBuffer();
-        fs.writeFileSync(path.join(UPLOAD_DIR, filename), optimized);
+        savedFilePath = path.join(UPLOAD_DIR, filename);
+        fs.writeFileSync(savedFilePath, optimized);
 
         const imageParts = [{
             inlineData: {
@@ -316,18 +332,26 @@ IMPORTANT: 위 형식과 이모지는 그대로 두되, 모든 글(제목·내�
         const result = await model.generateContent([prompt, ...imageParts]);
         const responseText = result.response.text();
 
-        // 6. DB에 저장!
-        const userId = req.user ? req.user.id : 'anonymous'; // 로그인 안 했으면 익명
+        // 6. DB에 저장! (저장 완료를 기다린 뒤 응답 — 실패하면 catch 로)
+        const userId = req.user.id;
         const imagePath = `/uploads/${filename}`;
-        db.run(`INSERT INTO outfits (user_id, image_path, analysis, is_public) VALUES (?, ?, ?, ?)`,
-            [userId, imagePath, responseText, isPublic], function (err) {
-                if (!err) console.log(`${this.lastID}번 코디(위치: ${currentLocation}, 공개: ${isPublic}) 저장 완료!`);
-            });
+        const newId = await new Promise((resolve, reject) => {
+            db.run(`INSERT INTO outfits (user_id, image_path, analysis, is_public) VALUES (?, ?, ?, ?)`,
+                [userId, imagePath, responseText, isPublic], function (err) {
+                    if (err) return reject(err);
+                    resolve(this.lastID);
+                });
+        });
+        console.log(`${newId}번 코디(위치: ${currentLocation}, 공개: ${isPublic}) 저장 완료!`);
 
-        res.json({ analysis: responseText });
+        res.json({ analysis: responseText, id: newId });
 
     } catch (error) {
         console.error('분석 중 에러 발생:', error);
+        // 분석/저장이 실패하면 이미 저장된 이미지가 고아가 되므로 정리한다.
+        if (savedFilePath) {
+            try { fs.unlinkSync(savedFilePath); } catch (_) { /* 무시 */ }
+        }
         res.status(500).json({ error: 'AI 분석 중 오류가 발생했습니다.' });
     }
 });
