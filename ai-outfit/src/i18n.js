@@ -28,6 +28,11 @@ const translations = {
     copied: '클립보드에 복사됐어요!',
     searchPlaceholder: '기록 검색 (내용·날짜)',
     noSearchResult: '검색 결과가 없어요.',
+    takePhoto: '카메라로 촬영',
+    chooseFromGallery: '갤러리에서 선택',
+    retake: '다시 선택',
+    cameraError: '카메라를 사용할 수 없어요. 권한을 확인해주세요.',
+    close: '닫기',
   },
   en: {
     loginDesc: 'Your smart styling guide powered by AI',
@@ -57,6 +62,11 @@ const translations = {
     copied: 'Copied to clipboard!',
     searchPlaceholder: 'Search records (text · date)',
     noSearchResult: 'No matching records.',
+    takePhoto: 'Take Photo',
+    chooseFromGallery: 'Choose from Gallery',
+    retake: 'Choose Again',
+    cameraError: 'Camera unavailable. Please check permissions.',
+    close: 'Close',
   },
 }
 

@@ -211,6 +211,108 @@ header h2 {
   margin-bottom: 20px;
 }
 
+.upload-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 20px;
+}
+.btn-camera,
+.btn-gallery {
+  display: block;
+  padding: 12px 20px;
+  border-radius: 30px;
+  font-weight: bold;
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: center;
+}
+.btn-camera {
+  background: var(--primary);
+  color: #fff;
+  border: none;
+}
+.btn-gallery {
+  background: transparent;
+  color: var(--text-dark);
+  border: 1px solid var(--border);
+}
+.btn-retake {
+  display: block;
+  margin: 16px auto 0;
+  background: none;
+  border: none;
+  color: var(--text-light);
+  font-size: 13px;
+  text-decoration: underline;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+/* 인앱 카메라: OS 카메라 앱으로 나가지 않고 페이지 안에서 촬영 (백그라운드 PWA 종료 문제 회피) */
+.camera-overlay {
+  position: fixed;
+  inset: 0;
+  background: #000;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.camera-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.camera-close-btn {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.4);
+  color: #fff;
+  border: none;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+}
+.camera-controls {
+  position: absolute;
+  bottom: 40px;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+}
+.camera-shutter-btn {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: #fff;
+  border: 4px solid rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+}
+.camera-error {
+  color: #fff;
+  text-align: center;
+  padding: 0 30px;
+}
+.camera-error p {
+  margin-bottom: 20px;
+}
+.camera-error button {
+  padding: 10px 24px;
+  border-radius: 30px;
+  border: 1px solid #fff;
+  background: transparent;
+  color: #fff;
+  font-family: inherit;
+  cursor: pointer;
+}
+
 .public-check-row {
   font-size: 13px;
   margin-top: 25px;

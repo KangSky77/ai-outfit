@@ -3,12 +3,14 @@ import { dict } from '../i18n.js'
 import { analyzeOutfit, getUserLocation } from '../api.js'
 import AnalysisResult from './AnalysisResult.jsx'
 import ShareButton from './ShareButton.jsx'
+import CameraCapture from './CameraCapture.jsx'
 
 export default function UploadTab({ onAnalyzed }) {
   const [file, setFile] = useState(null)
   const [isPublic, setIsPublic] = useState(false)
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null) // { text } 또는 { error }
+  const [showCamera, setShowCamera] = useState(false)
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -47,15 +49,28 @@ export default function UploadTab({ onAnalyzed }) {
             style={{ display: 'none' }}
             onChange={(e) => setFile(e.target.files[0] || null)}
           />
-          <label htmlFor="imageInput">
-            <div className="upload-card">
-              <div className="camera-icon-circle">
-                <span className="material-symbols-outlined">add_a_photo</span>
-              </div>
-              <h3>{file ? `✅ ${dict.selected}` : dict.uploadTitle}</h3>
-              <p>{dict.uploadDesc}</p>
+          <div className="upload-card">
+            <div className="camera-icon-circle">
+              <span className="material-symbols-outlined">add_a_photo</span>
             </div>
-          </label>
+            <h3>{file ? `✅ ${dict.selected}` : dict.uploadTitle}</h3>
+            <p>{dict.uploadDesc}</p>
+
+            {file ? (
+              <button type="button" className="btn-retake" onClick={() => setFile(null)}>
+                {dict.retake}
+              </button>
+            ) : (
+              <div className="upload-actions">
+                <button type="button" className="btn-camera" onClick={() => setShowCamera(true)}>
+                  {dict.takePhoto}
+                </button>
+                <label htmlFor="imageInput" className="btn-gallery">
+                  {dict.chooseFromGallery}
+                </label>
+              </div>
+            )}
+          </div>
 
           <div className="public-check-row">
             <label>
@@ -91,6 +106,16 @@ export default function UploadTab({ onAnalyzed }) {
           </div>
         )}
       </div>
+
+      {showCamera && (
+        <CameraCapture
+          onCapture={(capturedFile) => {
+            setFile(capturedFile)
+            setShowCamera(false)
+          }}
+          onClose={() => setShowCamera(false)}
+        />
+      )}
     </div>
   )
 }
