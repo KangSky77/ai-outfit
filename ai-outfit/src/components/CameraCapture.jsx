@@ -17,7 +17,14 @@ export default function CameraCapture({ onCapture, onClose }) {
 
     let active = true
     navigator.mediaDevices
-      .getUserMedia({ video: { facingMode: 'environment' }, audio: false })
+      .getUserMedia({
+        video: {
+          facingMode: 'environment',
+          width: { ideal: 1920 },
+          height: { ideal: 1920 },
+        },
+        audio: false,
+      })
       .then((stream) => {
         if (!active) {
           stream.getTracks().forEach((t) => t.stop())
