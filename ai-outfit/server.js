@@ -66,14 +66,33 @@ db.serialize(() => {
 // 보안 HTTP 헤더 (CSP는 외부 CDN 폰트/스타일을 막을 수 있어 끔 — 나머지 헤더는 적용)
 app.use(helmet({ contentSecurityPolicy: false }));
 
-// AI 분석은 비용이 드는 외부 호출이라 남용 방지용 레이트리밋
+// AI 분석은 비용이 드는 외부 호출이라 남용 방지용 레이트리밋.
+// 로그인 없이 누구나 호출할 수 있으므로 IP당 분당 한도를 두되,
+// 익명(비로그인)은 더 엄격하게 제한한다.
 const analyzeLimiter = rateLimit({
     windowMs: 60 * 1000, // 1분
-    max: 10,             // IP당 분당 10회
+    max: (req) => (req.user ? 15 : 5), // 로그인 15회/분, 익명 5회/분
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: '요청이 너무 많습니다. 잠시 후 다시 시도해주세요.' },
 });
+
+// 전체(글로벌) 일일 분석 상한 — IP를 우회해도 하루 총 호출 수를 막아
+// Gemini API 비용/디스크 폭증을 방지한다. (자정 기준 자동 리셋, 재시작 시도 리셋)
+const DAILY_ANALYSIS_CAP = Number(process.env.DAILY_ANALYSIS_CAP) || 300;
+let dailyCounter = { day: new Date().toDateString(), count: 0 };
+const underDailyCap = () => {
+    const today = new Date().toDateString();
+    if (dailyCounter.day !== today) dailyCounter = { day: today, count: 0 };
+    return dailyCounter.count < DAILY_ANALYSIS_CAP;
+};
+// 일일 상한을 넘으면 무거운 업로드/AI 처리 전에 차단한다.
+const dailyCapGuard = (req, res, next) => {
+    if (!underDailyCap()) {
+        return res.status(429).json({ error: '오늘 분석 한도가 가득 찼어요. 내일 다시 시도해주세요.' });
+    }
+    next();
+};
 
 // 2. 세션 및 패스포트 설정 (문지기)
 app.use(session({
@@ -124,13 +143,15 @@ passport.serializeUser((user, done) => done(null, {
 }));
 passport.deserializeUser((user, done) => done(null, user));
 
-// 이미지 업로드를 위한 multer 설정 (하드디스크에 저장)
-const UPLOAD_DIR = path.join(__dirname, 'public', 'uploads');
-// 업로드 폴더 확보. public/uploads 는 외장 HDD를 가리키는 심링크일 수 있는데,
-// HDD가 마운트되지 않았으면 생성에 실패한다. 이때 서버 전체가 죽지 않도록
-// 경고만 남기고 계속 진행한다. (업로드 시점에 명확한 에러를 반환)
+// 이미지 업로드 저장 폴더.
+// 기본은 로컬 public/uploads 지만, .env 의 UPLOAD_DIR 로 외장 HDD/NAS 경로를
+// 지정하면 시스템 디스크 대신 그쪽에 저장한다 (대용량 + 시스템디스크 보호).
+const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, 'public', 'uploads');
+// 업로드 폴더 확보. HDD가 마운트되지 않았으면 생성에 실패할 수 있는데,
+// 이때 서버 전체가 죽지 않도록 경고만 남기고 계속 진행한다.
 try {
     fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+    console.log(`📁 업로드 저장 폴더: ${UPLOAD_DIR}`);
 } catch (e) {
     console.warn(`⚠️ 업로드 폴더를 준비하지 못했습니다 (${UPLOAD_DIR}): ${e.message}`);
     console.warn('   외장 HDD 마운트 상태를 확인하세요. 업로드는 실패할 수 있지만 서버는 계속 동작합니다.');
@@ -240,7 +261,7 @@ app.delete('/api/outfits/:id', attachUserId, (req, res) => {
 });
 
 // 분석 및 저장 API (로그인 없이도 사용 가능 — 익명은 세션에 격리 저장)
-app.post('/analyze-outfit', attachUserId, analyzeLimiter, upload.single('selfie'), async (req, res) => {
+app.post('/analyze-outfit', attachUserId, analyzeLimiter, dailyCapGuard, upload.single('selfie'), async (req, res) => {
     console.log("분석 요청 수신! 위치 정보 확인중...");
 
     let savedFilePath = null; // 실패 시 정리할 업로드 파일 경로
@@ -339,6 +360,7 @@ app.post('/analyze-outfit', attachUserId, analyzeLimiter, upload.single('selfie'
 IMPORTANT: 위 형식과 이모지는 그대로 두되, 모든 글(제목·내용)은 ${lang} 로 작성해줘.
 `;
 
+        dailyCounter.count += 1; // 실제 Gemini 호출 직전에 일일 카운터 증가
         const result = await model.generateContent([prompt, ...imageParts]);
         const responseText = result.response.text();
 
