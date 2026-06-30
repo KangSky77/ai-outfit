@@ -61,10 +61,35 @@ db.serialize(() => {
         outfit_id INTEGER,
         PRIMARY KEY (user_id, outfit_id)
     )`);
+
+    // 인덱스 — 데이터가 많아져도 조회가 빠르도록 (자주 쓰는 WHERE 컬럼에 생성)
+    db.run(`CREATE INDEX IF NOT EXISTS idx_outfits_user ON outfits(user_id)`);          // 내 기록 조회
+    db.run(`CREATE INDEX IF NOT EXISTS idx_outfits_public ON outfits(is_public, created_at)`); // 공개 갤러리
+    db.run(`CREATE INDEX IF NOT EXISTS idx_outfits_image ON outfits(image_path)`);      // 이미지 접근 제어 조회
+    db.run(`CREATE INDEX IF NOT EXISTS idx_likes_outfit ON outfit_likes(outfit_id)`);   // 좋아요 집계
 });
 
-// 보안 HTTP 헤더 (CSP는 외부 CDN 폰트/스타일을 막을 수 있어 끔 — 나머지 헤더는 적용)
-app.use(helmet({ contentSecurityPolicy: false }));
+// 보안 HTTP 헤더 + CSP(콘텐츠 보안 정책)로 XSS 심층 방어.
+// 이 앱이 실제로 쓰는 출처만 허용한다:
+//  - 스크립트: 자기 자신만 (Vite 빌드는 외부 모듈 스크립트, 인라인 스크립트 없음)
+//  - 스타일/폰트: Pretendard(jsdelivr) + Material Symbols(google fonts)
+//  - 이미지: 자기 자신 + data:/blob: (파비콘·캔버스 등)
+app.use(helmet({
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'"],
+            styleSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://fonts.googleapis.com"],
+            fontSrc: ["'self'", "https://cdn.jsdelivr.net", "https://fonts.gstatic.com"],
+            imgSrc: ["'self'", "data:", "blob:"],
+            connectSrc: ["'self'"],
+            manifestSrc: ["'self'"],
+            workerSrc: ["'self'"],
+            objectSrc: ["'none'"],
+            frameAncestors: ["'self'"],
+        },
+    },
+}));
 
 // AI 분석은 비용이 드는 외부 호출이라 남용 방지용 레이트리밋.
 // 로그인 없이 누구나 호출할 수 있으므로 IP당 분당 한도를 두되,
@@ -127,6 +152,11 @@ const attachUserId = (req, res, next) => {
     next();
 };
 
+// 신원을 "조회만" 한다 (새 익명 ID를 발급하지 않음).
+// 이미지 접근 제어처럼, 신원이 없으면 그냥 권한 없음으로 처리하면 되는 곳에서 사용.
+// (공개 이미지를 불러올 때마다 불필요하게 세션을 굽지 않도록)
+const peekUserId = (req) => (req.user ? req.user.id : (req.session && req.session.anonId) || null);
+
 passport.use(new GoogleStrategy({
         clientID: process.env.GOOGLE_CLIENT_ID,
         clientSecret: process.env.GOOGLE_CLIENT_SECRET,
@@ -165,12 +195,38 @@ const upload = multer({
         cb(new Error('이미지 파일만 업로드할 수 있습니다.'));
     },
 });
+// multer 에러(용량 초과·형식 오류)를 500이 아닌 깔끔한 400 JSON 으로 변환한다.
+const uploadSingle = (req, res, next) => upload.single('selfie')(req, res, (err) => {
+    if (err) {
+        const msg = err.code === 'LIMIT_FILE_SIZE'
+            ? '이미지가 너무 커요 (최대 10MB).'
+            : (err.message || '업로드 중 오류가 발생했습니다.');
+        return res.status(400).json({ error: msg });
+    }
+    next();
+});
 
-// 정적 파일 제공
-//  - 빌드된 React 앱(dist)을 서빙
-//  - 업로드 이미지는 public/uploads (심링크로 외장 HDD를 가리킴)에서 서빙
+// 빌드된 React 앱(dist) 서빙
 app.use(express.static(path.join(__dirname, 'dist')));
-app.use('/uploads', express.static(UPLOAD_DIR));
+
+// 업로드 이미지 서빙 — 접근 제어를 건다.
+//  - 공개(is_public=1) 코디 이미지: 누구나 접근 가능 (커뮤니티 갤러리용)
+//  - 비공개 이미지: 소유자(로그인 또는 같은 익명 세션)만 접근 가능
+//  - 그 외에는 404 (존재 여부도 노출하지 않음)
+// 이렇게 해서 "임의 이미지를 우리 도메인에 올려 무단 호스팅"하는 악용을 막는다.
+app.get('/uploads/:filename', (req, res) => {
+    const filename = path.basename(req.params.filename); // 경로 조작 방지
+    const imagePath = `/uploads/${filename}`;
+    db.get(`SELECT user_id, is_public FROM outfits WHERE image_path = ?`, [imagePath], (err, row) => {
+        if (err) return res.status(500).end();
+        if (!row) return res.status(404).end();
+        const allowed = row.is_public === 1 || row.user_id === peekUserId(req);
+        if (!allowed) return res.status(404).end(); // 권한 없으면 "없음"으로 응답
+        res.sendFile(path.join(UPLOAD_DIR, filename), {
+            headers: { 'Cache-Control': 'private, max-age=86400' },
+        }, (e) => { if (e && !res.headersSent) res.status(404).end(); });
+    });
+});
 
 // 제미나이 API 초기화
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -261,7 +317,7 @@ app.delete('/api/outfits/:id', attachUserId, (req, res) => {
 });
 
 // 분석 및 저장 API (로그인 없이도 사용 가능 — 익명은 세션에 격리 저장)
-app.post('/analyze-outfit', attachUserId, analyzeLimiter, dailyCapGuard, upload.single('selfie'), async (req, res) => {
+app.post('/analyze-outfit', attachUserId, analyzeLimiter, dailyCapGuard, uploadSingle, async (req, res) => {
     console.log("분석 요청 수신! 위치 정보 확인중...");
 
     let savedFilePath = null; // 실패 시 정리할 업로드 파일 경로
@@ -269,7 +325,11 @@ app.post('/analyze-outfit', attachUserId, analyzeLimiter, dailyCapGuard, upload.
         if (!req.file) return res.status(400).json({ error: '이미지 업로드 실패.' });
 
         // 1. 프론트엔드에서 보낸 위도(lat), 경도(lon), 언어, 공개여부 받기
-        const { lat, lon } = req.body;
+        // 좌표는 숫자 + 유효 범위(위도 ±90, 경도 ±180)일 때만 사용 (잘못된 값으로 외부 URL 구성 방지)
+        const latNum = Number(req.body.lat);
+        const lonNum = Number(req.body.lon);
+        const hasCoords = Number.isFinite(latNum) && Number.isFinite(lonNum)
+            && Math.abs(latNum) <= 90 && Math.abs(lonNum) <= 180;
         const lang = req.body.lang === 'English' ? 'English' : 'Korean'; // 답변 언어
         // 커뮤니티 공개는 로그인 사용자만 허용 (익명 공개 사진은 책임 추적이 안 되므로 차단).
         // 프런트가 보내더라도 서버에서 한 번 더 강제한다.
@@ -286,9 +346,9 @@ app.post('/analyze-outfit', attachUserId, analyzeLimiter, dailyCapGuard, upload.
         let currentWeather = "날씨 정보 없음";
         let weatherUrl = `https://api.openweathermap.org/data/2.5/weather?q=Incheon&appid=${weatherApiKey}&units=metric&lang=kr`;
 
-        // 2. 좌표가 있다면 해당 위치 날씨로 URL 변경! (lat, lon 둘 다 필요)
-        if (lat && lon) {
-            weatherUrl = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${weatherApiKey}&units=metric&lang=kr`;
+        // 2. 유효한 좌표가 있다면 해당 위치 날씨로 URL 변경!
+        if (hasCoords) {
+            weatherUrl = `https://api.openweathermap.org/data/2.5/weather?lat=${latNum}&lon=${lonNum}&appid=${weatherApiKey}&units=metric&lang=kr`;
             currentLocation = "사용자 현재 위치";
         }
 
@@ -302,7 +362,7 @@ app.post('/analyze-outfit', attachUserId, analyzeLimiter, dailyCapGuard, upload.
                 const wData = await weatherRes.json();
                 if (weatherRes.ok) {
                     currentWeather = `온도: ${Math.round(wData.main.temp)}도, 상태: ${wData.weather[0].description}`;
-                    if (lat && lon) currentLocation = wData.name; // API가 알려주는 지역 이름으로 업데이트
+                    if (hasCoords) currentLocation = wData.name; // API가 알려주는 지역 이름으로 업데이트
                 }
             } catch (err) {
                 console.error("날씨 호출 실패:", err.message);
@@ -395,18 +455,30 @@ app.get('/logout', (req, res, next) => {
     });
 });
 
+// 최후의 에러 핸들러 — 처리되지 않은 에러가 와도 스택을 노출하지 않고
+// 깔끔한 JSON 으로 응답한다. (4개 인자라 Express 가 에러 핸들러로 인식)
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+    console.error('처리되지 않은 에러:', err);
+    if (res.headersSent) return;
+    res.status(500).json({ error: '서버 오류가 발생했습니다.' });
+});
+
 // 보안: 외부에서 7704로 직접 접속하지 못하도록 루프백(localhost)에만 바인딩한다.
 // 단, nginx의 proxy_pass(localhost)가 환경에 따라 IPv6(::1)로 풀릴 수 있어
 // IPv4(127.0.0.1)와 IPv6(::1) 두 루프백 모두에 바인딩해야 502가 안 난다.
 // (개발 등 외부 접근이 필요하면 HOST 환경변수로 0.0.0.0 지정 가능)
 const http = require('http');
-const startOn = (addr) =>
-    http.createServer(app)
+const servers = [];
+const startOn = (addr) => {
+    const server = http.createServer(app)
         .listen(port, addr, () => {
             const shown = addr.includes(':') ? `[${addr}]` : addr;
             console.log(`서버가 http://${shown}:${port} 에서 실행 중입니다.`);
         })
         .on('error', (e) => console.warn(`${addr} 바인딩 생략: ${e.code}`));
+    servers.push(server);
+};
 
 if (process.env.HOST) {
     startOn(process.env.HOST);
@@ -414,3 +486,21 @@ if (process.env.HOST) {
     startOn('127.0.0.1'); // IPv4 루프백
     startOn('::1');        // IPv6 루프백 (nginx가 localhost→::1 로 오는 경우)
 }
+
+// 안전한 종료(graceful shutdown) — PM2 재시작/종료 시 진행 중 요청을 끝내고
+// DB를 정상적으로 닫아 데이터 손상을 막는다.
+let shuttingDown = false;
+const shutdown = (signal) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`\n${signal} 수신 — 안전하게 종료합니다...`);
+    servers.forEach((s) => s.close());
+    db.close((err) => {
+        if (err) console.error('DB 종료 중 에러:', err.message);
+        process.exit(0);
+    });
+    // 5초 안에 안 끝나면 강제 종료
+    setTimeout(() => process.exit(0), 5000).unref();
+};
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
