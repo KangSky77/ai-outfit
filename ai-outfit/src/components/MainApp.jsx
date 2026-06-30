@@ -1,11 +1,10 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback } from 'react'
 import { dict } from '../i18n.js'
 import Header from './Header.jsx'
 import BottomNav from './BottomNav.jsx'
 import UploadTab from './UploadTab.jsx'
 import HistoryTab from './HistoryTab.jsx'
 import GalleryTab from './GalleryTab.jsx'
-import LoginPrompt from './LoginPrompt.jsx'
 import {
   fetchHistory, fetchPublicGallery, likeOutfit, deleteOutfit,
 } from '../api.js'
@@ -14,8 +13,8 @@ import {
 const initialList = { status: 'idle', items: [] }
 
 export default function MainApp({ user }) {
-  // 로그인 안 했으면 누구나 볼 수 있는 갤러리부터 보여준다.
-  const [tab, setTab] = useState(user ? 'upload' : 'gallery')
+  // 로그인 없이도 모든 탭을 쓸 수 있다. 첫 화면은 업로드(분석).
+  const [tab, setTab] = useState('upload')
   const [history, setHistory] = useState(initialList)
   const [gallery, setGallery] = useState(initialList)
 
@@ -33,13 +32,6 @@ export default function MainApp({ user }) {
   const loadHistory = useCallback(makeLoader(fetchHistory, setHistory), [])
   const loadGallery = useCallback(makeLoader(fetchPublicGallery, setGallery), [])
 
-  // 첫 화면이 탭 전환 없이 바로 떠 있으므로, 그 탭의 데이터를 한 번 불러온다.
-  useEffect(() => {
-    if (tab === 'gallery') loadGallery()
-    if (tab === 'history') loadHistory()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   // 탭 전환 시 해당 데이터를 새로 불러온다.
   const switchTab = useCallback((next) => {
     setTab(next)
@@ -48,20 +40,18 @@ export default function MainApp({ user }) {
   }, [loadHistory, loadGallery])
 
   // 좋아요 토글: likes 수와 liked 상태를 양쪽 목록에서 갱신 (새로고침 없이)
-  // 로그인 안 했으면 좋아요는 인증이 필요한 동작이라 로그인으로 보낸다.
+  // 로그인/익명 모두 가능 (서버가 세션 단위로 중복을 막는다).
   const handleLike = useCallback(async (id) => {
-    if (!user) { window.location.href = '/auth/google'; return }
     try {
       const { likes, liked } = await likeOutfit(id)
       const patch = (s) => ({ ...s, items: s.items.map((it) => (it.id === id ? { ...it, likes, liked } : it)) })
       setHistory(patch)
       setGallery(patch)
     } catch (e) { console.error('좋아요 에러:', e) }
-  }, [user])
+  }, [])
 
-  // 삭제: 확인 후 양쪽 목록에서 제거
+  // 삭제: 확인 후 양쪽 목록에서 제거 (로그인/익명 모두 자기 것만)
   const handleDelete = useCallback(async (id) => {
-    if (!user) { window.location.href = '/auth/google'; return }
     if (!window.confirm(dict.deleteConfirm)) return
     try {
       await deleteOutfit(id)
@@ -75,13 +65,9 @@ export default function MainApp({ user }) {
     <>
       <Header tab={tab} onSwitch={switchTab} user={user} />
 
-      {tab === 'upload' && (
-        user ? <UploadTab onAnalyzed={loadHistory} /> : <LoginPrompt message={dict.loginRequiredUpload} />
-      )}
+      {tab === 'upload' && <UploadTab onAnalyzed={loadHistory} user={user} />}
       {tab === 'history' && (
-        user
-          ? <HistoryTab data={history} onLike={handleLike} onDelete={handleDelete} />
-          : <LoginPrompt message={dict.loginRequiredHistory} />
+        <HistoryTab data={history} onLike={handleLike} onDelete={handleDelete} />
       )}
       {tab === 'gallery' && <GalleryTab data={gallery} onLike={handleLike} />}
 

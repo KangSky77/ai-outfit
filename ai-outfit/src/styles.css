@@ -320,6 +320,20 @@ header h2 {
   font-size: 13px;
   margin-top: 25px;
 }
+.public-need-login {
+  color: var(--text-muted);
+}
+.link-login {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent-text);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
 .public-check-row input {
   vertical-align: middle;
 }

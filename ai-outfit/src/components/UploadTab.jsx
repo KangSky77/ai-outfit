@@ -5,7 +5,7 @@ import AnalysisResult from './AnalysisResult.jsx'
 import ShareButton from './ShareButton.jsx'
 import CameraCapture from './CameraCapture.jsx'
 
-export default function UploadTab({ onAnalyzed }) {
+export default function UploadTab({ onAnalyzed, user }) {
   const [file, setFile] = useState(null)
   const [isPublic, setIsPublic] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -72,16 +72,26 @@ export default function UploadTab({ onAnalyzed }) {
             )}
           </div>
 
-          <div className="public-check-row">
-            <label>
-              <input
-                type="checkbox"
-                checked={isPublic}
-                onChange={(e) => setIsPublic(e.target.checked)}
-              />{' '}
-              <span>{dict.publicCheck}</span>
-            </label>
-          </div>
+          {/* 커뮤니티 공개는 로그인 사용자만 (서버에서도 동일하게 강제) */}
+          {user ? (
+            <div className="public-check-row">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={isPublic}
+                  onChange={(e) => setIsPublic(e.target.checked)}
+                />{' '}
+                <span>{dict.publicCheck}</span>
+              </label>
+            </div>
+          ) : (
+            <div className="public-check-row public-need-login">
+              <span>{dict.publicNeedsLogin}</span>{' '}
+              <button type="button" className="link-login" onClick={() => { window.location.href = '/auth/google' }}>
+                {dict.loginBtn}
+              </button>
+            </div>
+          )}
 
           {file && (
             <div>

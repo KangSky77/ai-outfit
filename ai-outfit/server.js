@@ -93,11 +93,19 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
-// 로그인 필수 미들웨어 — 개인 데이터/비용이 드는 API를 서버에서도 보호한다.
-// (프런트뿐 아니라 서버에서 인증을 강제해야 비로그인 직접 호출을 막을 수 있음)
-const requireAuth = (req, res, next) => {
-    if (req.user) return next();
-    res.status(401).json({ error: '로그인이 필요합니다.' });
+// 신원 부여 미들웨어 — 로그인 없이도 기능을 쓸 수 있게 한다.
+//  - 로그인 유저: 구글 프로필 ID (예: "10934...")
+//  - 비로그인 유저: 세션에 1회 발급한 익명 ID (예: "anon:uuid")
+// 익명 ID는 세션 쿠키에 묶이므로, 같은 브라우저에서는 자기 기록만 격리되어 보인다.
+// (쿠키를 지우면 익명 기록 접근은 잃는다 — 익명 사용자에겐 자연스러운 동작)
+const attachUserId = (req, res, next) => {
+    if (req.user) {
+        req.appUserId = req.user.id;
+    } else {
+        if (!req.session.anonId) req.session.anonId = `anon:${crypto.randomUUID()}`;
+        req.appUserId = req.session.anonId;
+    }
+    next();
 };
 
 passport.use(new GoogleStrategy({
@@ -156,9 +164,9 @@ app.get('/auth/google/callback',
 // 프론트엔드에서 "나 지금 로그인 되어있나?" 확인할 때 쓸 API
 app.get('/api/user', (req, res) => res.json(req.user || null));
 
-// DB에서 내 기록 다 가져오기 API
-app.get('/api/history', requireAuth, (req, res) => {
-    const userId = req.user.id;
+// DB에서 내 기록 다 가져오기 API (로그인 유저 또는 익명 세션 본인 것만)
+app.get('/api/history', attachUserId, (req, res) => {
+    const userId = req.appUserId;
     // liked: 현재 유저가 이 코디에 좋아요를 눌렀는지 (0/1)
     db.all(
         `SELECT o.*,
@@ -171,8 +179,8 @@ app.get('/api/history', requireAuth, (req, res) => {
 });
 
 // 커뮤니티에 공개된 코디들 (모든 유저 공통, likes 포함)
-app.get('/api/public-gallery', (req, res) => {
-    const userId = req.user ? req.user.id : null;
+app.get('/api/public-gallery', attachUserId, (req, res) => {
+    const userId = req.appUserId;
     db.all(
         `SELECT o.id, o.image_path, o.analysis, o.likes, o.created_at,
             EXISTS(SELECT 1 FROM outfit_likes l WHERE l.outfit_id = o.id AND l.user_id = ?) AS liked
@@ -183,10 +191,10 @@ app.get('/api/public-gallery', (req, res) => {
         });
 });
 
-// 좋아요 토글 (로그인 유저 1회, 다시 누르면 취소) → { likes, liked }
-app.post('/api/outfits/:id/like', requireAuth, (req, res) => {
+// 좋아요 토글 (유저/익명 세션당 1회, 다시 누르면 취소) → { likes, liked }
+app.post('/api/outfits/:id/like', attachUserId, (req, res) => {
     const outfitId = req.params.id;
-    const userId = req.user.id;
+    const userId = req.appUserId;
 
     // 갱신된 likes 수를 읽어서 응답하는 마무리 함수
     const finish = (liked) => db.get(`SELECT likes FROM outfits WHERE id = ?`, [outfitId], (e, row) => {
@@ -212,10 +220,10 @@ app.post('/api/outfits/:id/like', requireAuth, (req, res) => {
     });
 });
 
-// 내 코디 삭제 (본인 것만). 업로드 파일도 같이 지운다.
-app.delete('/api/outfits/:id', requireAuth, (req, res) => {
+// 내 코디 삭제 (본인 것만 — 로그인/익명 모두 자기 것만). 업로드 파일도 같이 지운다.
+app.delete('/api/outfits/:id', attachUserId, (req, res) => {
     const { id } = req.params;
-    const userId = req.user.id;
+    const userId = req.appUserId;
     db.get(`SELECT image_path FROM outfits WHERE id = ? AND user_id = ?`, [id, userId], (err, row) => {
         if (err || !row) return res.status(404).json({ error: '기록 없음' });
         // image_path 는 "/uploads/파일명" → 실제 저장 폴더(UPLOAD_DIR) 기준으로 변환
@@ -231,8 +239,8 @@ app.delete('/api/outfits/:id', requireAuth, (req, res) => {
     });
 });
 
-// 분석 및 저장 API
-app.post('/analyze-outfit', requireAuth, analyzeLimiter, upload.single('selfie'), async (req, res) => {
+// 분석 및 저장 API (로그인 없이도 사용 가능 — 익명은 세션에 격리 저장)
+app.post('/analyze-outfit', attachUserId, analyzeLimiter, upload.single('selfie'), async (req, res) => {
     console.log("분석 요청 수신! 위치 정보 확인중...");
 
     let savedFilePath = null; // 실패 시 정리할 업로드 파일 경로
@@ -242,7 +250,9 @@ app.post('/analyze-outfit', requireAuth, analyzeLimiter, upload.single('selfie')
         // 1. 프론트엔드에서 보낸 위도(lat), 경도(lon), 언어, 공개여부 받기
         const { lat, lon } = req.body;
         const lang = req.body.lang === 'English' ? 'English' : 'Korean'; // 답변 언어
-        const isPublic = req.body.isPublic === 'true' ? 1 : 0;            // 커뮤니티 공개
+        // 커뮤니티 공개는 로그인 사용자만 허용 (익명 공개 사진은 책임 추적이 안 되므로 차단).
+        // 프런트가 보내더라도 서버에서 한 번 더 강제한다.
+        const isPublic = (req.user && req.body.isPublic === 'true') ? 1 : 0;
 
         // 현재 계절 (서버 날짜 기준) — 시즌 트렌드 추천에 사용
         const month = new Date().getMonth() + 1;
@@ -333,7 +343,7 @@ IMPORTANT: 위 형식과 이모지는 그대로 두되, 모든 글(제목·내�
         const responseText = result.response.text();
 
         // 6. DB에 저장! (저장 완료를 기다린 뒤 응답 — 실패하면 catch 로)
-        const userId = req.user.id;
+        const userId = req.appUserId;
         const imagePath = `/uploads/${filename}`;
         const newId = await new Promise((resolve, reject) => {
             db.run(`INSERT INTO outfits (user_id, image_path, analysis, is_public) VALUES (?, ?, ?, ?)`,
