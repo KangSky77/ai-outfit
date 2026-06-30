@@ -3,7 +3,7 @@ import ThemeToggle from './ThemeToggle.jsx'
 
 const TABS = ['history', 'upload', 'gallery']
 
-export default function Header({ tab, onSwitch }) {
+export default function Header({ tab, onSwitch, user }) {
   return (
     <header>
       <ThemeToggle />
@@ -19,9 +19,15 @@ export default function Header({ tab, onSwitch }) {
           </button>
         ))}
       </nav>
-      <button className="logout-btn" onClick={() => { window.location.href = '/logout' }}>
-        <span className="material-symbols-outlined">logout</span>
-      </button>
+      {user ? (
+        <button className="logout-btn" onClick={() => { window.location.href = '/logout' }} aria-label="logout">
+          <span className="material-symbols-outlined">logout</span>
+        </button>
+      ) : (
+        <button className="logout-btn" onClick={() => { window.location.href = '/auth/google' }} aria-label="login">
+          <span className="material-symbols-outlined">login</span>
+        </button>
+      )}
     </header>
   )
 }

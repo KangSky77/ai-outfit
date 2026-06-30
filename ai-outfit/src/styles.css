@@ -83,6 +83,9 @@ body {
   color: var(--text-muted);
   margin: 0;
 }
+.login-prompt {
+  margin: 20px auto 0;
+}
 .btn-google {
   background: var(--card-bg);
   color: var(--text-dark);

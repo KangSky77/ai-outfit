@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import Login from './components/Login.jsx'
 import MainApp from './components/MainApp.jsx'
 import { fetchUser } from './api.js'
 
@@ -19,7 +18,7 @@ export default function App() {
 
   return (
     <div className="app-container">
-      {user ? <MainApp /> : <Login />}
+      <MainApp user={user} />
     </div>
   )
 }

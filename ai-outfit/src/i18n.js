@@ -33,6 +33,8 @@ const translations = {
     retake: '다시 선택',
     cameraError: '카메라를 사용할 수 없어요. 권한을 확인해주세요.',
     close: '닫기',
+    loginRequiredUpload: '로그인하면 코디를 분석할 수 있어요.',
+    loginRequiredHistory: '로그인하면 나만의 기록을 볼 수 있어요.',
   },
   en: {
     loginDesc: 'Your smart styling guide powered by AI',
@@ -67,6 +69,8 @@ const translations = {
     retake: 'Choose Again',
     cameraError: 'Camera unavailable. Please check permissions.',
     close: 'Close',
+    loginRequiredUpload: 'Sign in to analyze your outfit.',
+    loginRequiredHistory: 'Sign in to see your history.',
   },
 }
 
