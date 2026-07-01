@@ -3,6 +3,7 @@ import { dict } from '../i18n.js'
 import Modal from './Modal.jsx'
 import AnalysisResult from './AnalysisResult.jsx'
 import ShareButton from './ShareButton.jsx'
+import LikeButton from './LikeButton.jsx'
 
 export default function HistoryTab({ data, onLike, onDelete }) {
   const [selected, setSelected] = useState(null) // 모달에 보여줄 기록
@@ -43,12 +44,12 @@ export default function HistoryTab({ data, onLike, onDelete }) {
             </div>
 
             <div className="item-actions">
-              <button
-                className={`like-btn ${item.liked ? 'liked' : ''}`}
+              <LikeButton
+                className="like-btn"
+                liked={item.liked}
+                likes={item.likes}
                 onClick={() => onLike(item.id)}
-              >
-                {item.liked ? '❤️' : '🤍'} <span>{item.likes ?? 0}</span>
-              </button>
+              />
               <button
                 className="delete-btn"
                 aria-label="delete"

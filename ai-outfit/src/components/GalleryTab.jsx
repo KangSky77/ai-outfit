@@ -1,4 +1,5 @@
 import { dict } from '../i18n.js'
+import LikeButton from './LikeButton.jsx'
 
 export default function GalleryTab({ data, onLike }) {
   const { status, items } = data
@@ -16,12 +17,12 @@ export default function GalleryTab({ data, onLike }) {
         {items.map((item) => (
           <div className="grid-item" key={item.id}>
             <img src={item.image_path} alt="" loading="lazy" />
-            <button
-              className={`like-overlay ${item.liked ? 'liked' : ''}`}
+            <LikeButton
+              className="like-overlay"
+              liked={item.liked}
+              likes={item.likes}
               onClick={() => onLike(item.id)}
-            >
-              {item.liked ? '❤️' : '🤍'} <span>{item.likes ?? 0}</span>
-            </button>
+            />
           </div>
         ))}
       </div>

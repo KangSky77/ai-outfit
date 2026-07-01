@@ -22,9 +22,11 @@ const port = process.env.PORT || 7704;
 // 운영(프로덕션, HTTPS)인지 여부 — 쿠키 secure 설정에 사용
 const isProd = process.env.NODE_ENV === 'production';
 
+// ─────────────────────────────────────────────
 // 0. 필수 환경변수 검사 (서버가 "왜 안 켜지는지" 명확히 알려주기)
 //    .env 가 없으면 passport 가 알 수 없는 스택트레이스를 뱉으며 죽는다.
 //    그 전에 사람이 읽을 수 있는 메시지로 바로 알려주고 종료한다.
+// ─────────────────────────────────────────────
 const REQUIRED_ENV = ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GEMINI_API_KEY', 'SESSION_SECRET'];
 const missing = REQUIRED_ENV.filter((k) => !process.env[k]);
 if (missing.length > 0) {
@@ -34,12 +36,32 @@ if (missing.length > 0) {
     process.exit(1);
 }
 
-// 1. DB 초기 설정 (기억의 저장소)
-const db = new sqlite3.Database('./closet.db'); // closet.db 라는 파일이 자동으로 생깁니다.
+// ─────────────────────────────────────────────
+// 1. DB — 초기화(스키마/마이그레이션/인덱스) + Promise 헬퍼
+//    sqlite3 는 콜백 기반이라 그대로 쓰면 라우트가 중첩 콜백으로 깊어진다.
+//    아래 세 헬퍼로 감싸서 모든 라우트를 async/await 로 평탄하게 쓴다.
+//    (Express 5 는 async 라우트의 예외를 자동으로 에러 핸들러에 전달한다)
+// ─────────────────────────────────────────────
+const db = new sqlite3.Database('./closet.db');
+
+const dbGet = (sql, params = []) => new Promise((resolve, reject) => {
+    db.get(sql, params, (err, row) => (err ? reject(err) : resolve(row)));
+});
+const dbAll = (sql, params = []) => new Promise((resolve, reject) => {
+    db.all(sql, params, (err, rows) => (err ? reject(err) : resolve(rows)));
+});
+// resolve 값: { lastID, changes } — INSERT 한 행의 id 나 영향받은 행 수가 필요할 때 사용
+const dbRun = (sql, params = []) => new Promise((resolve, reject) => {
+    db.run(sql, params, function (err) {
+        if (err) return reject(err);
+        resolve({ lastID: this.lastID, changes: this.changes });
+    });
+});
+
 db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS outfits (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id TEXT,       -- 구글 로그인 유저의 고유 ID
+        user_id TEXT,       -- 구글 로그인 유저의 고유 ID 또는 익명 세션 ID(anon:uuid)
         image_path TEXT,    -- 사진이 저장된 경로
         analysis TEXT,      -- 제미나이가 분석해준 내용
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -69,8 +91,11 @@ db.serialize(() => {
     db.run(`CREATE INDEX IF NOT EXISTS idx_likes_outfit ON outfit_likes(outfit_id)`);   // 좋아요 집계
 });
 
-// 보안 HTTP 헤더 + CSP(콘텐츠 보안 정책)로 XSS 심층 방어.
-// 이 앱이 실제로 쓰는 출처만 허용한다:
+// ─────────────────────────────────────────────
+// 2. 보안 헤더 + 남용 방지 가드
+// ─────────────────────────────────────────────
+
+// CSP(콘텐츠 보안 정책)로 XSS 심층 방어. 이 앱이 실제로 쓰는 출처만 허용한다:
 //  - 스크립트: 자기 자신만 (Vite 빌드는 외부 모듈 스크립트, 인라인 스크립트 없음)
 //  - 스타일/폰트: Pretendard(jsdelivr) + Material Symbols(google fonts)
 //  - 이미지: 자기 자신 + data:/blob: (파비콘·캔버스 등)
@@ -119,7 +144,9 @@ const dailyCapGuard = (req, res, next) => {
     next();
 };
 
-// 2. 세션 및 패스포트 설정 (문지기)
+// ─────────────────────────────────────────────
+// 3. 세션 / 로그인(passport) / 신원 미들웨어
+// ─────────────────────────────────────────────
 app.use(session({
     // 세션을 메모리가 아닌 파일 DB(sessions.db)에 저장 → 서버 재시작해도 로그인 유지
     store: new SQLiteStore({ db: 'sessions.db', dir: __dirname }),
@@ -173,6 +200,10 @@ passport.serializeUser((user, done) => done(null, {
 }));
 passport.deserializeUser((user, done) => done(null, user));
 
+// ─────────────────────────────────────────────
+// 4. 업로드(multer + sharp) / 정적 파일 / 이미지 접근 제어
+// ─────────────────────────────────────────────
+
 // 이미지 업로드 저장 폴더.
 // 기본은 로컬 public/uploads 지만, .env 의 UPLOAD_DIR 로 외장 HDD/NAS 경로를
 // 지정하면 시스템 디스크 대신 그쪽에 저장한다 (대용량 + 시스템디스크 보호).
@@ -186,6 +217,7 @@ try {
     console.warn(`⚠️ 업로드 폴더를 준비하지 못했습니다 (${UPLOAD_DIR}): ${e.message}`);
     console.warn('   외장 HDD 마운트 상태를 확인하세요. 업로드는 실패할 수 있지만 서버는 계속 동작합니다.');
 }
+
 // 메모리에 받아서 sharp로 리사이즈/압축한 뒤 디스크에 저장한다.
 const upload = multer({
     storage: multer.memoryStorage(),
@@ -206,6 +238,22 @@ const uploadSingle = (req, res, next) => upload.single('selfie')(req, res, (err)
     next();
 });
 
+// 업로드 원본을 웹 서빙용으로 최적화해서 UPLOAD_DIR 에 저장한다.
+//  - EXIF 회전 보정(폰 사진 방향) + 1080px 리사이즈 + JPEG 80% 압축
+//  - 재인코딩 과정에서 EXIF(GPS 포함)가 제거되고, 이미지로 위장한 악성 파일도 걸러진다
+// 반환: { filename, filePath, buffer } — buffer 는 Gemini 전송에 재사용
+async function optimizeAndSave(originalBuffer) {
+    const filename = `${crypto.randomUUID()}.jpg`; // 충돌·추측 방지용 무작위 파일명
+    const buffer = await sharp(originalBuffer)
+        .rotate()
+        .resize({ width: 1080, withoutEnlargement: true })
+        .jpeg({ quality: 80 })
+        .toBuffer();
+    const filePath = path.join(UPLOAD_DIR, filename);
+    fs.writeFileSync(filePath, buffer);
+    return { filename, filePath, buffer };
+}
+
 // 빌드된 React 앱(dist) 서빙
 app.use(express.static(path.join(__dirname, 'dist')));
 
@@ -214,186 +262,66 @@ app.use(express.static(path.join(__dirname, 'dist')));
 //  - 비공개 이미지: 소유자(로그인 또는 같은 익명 세션)만 접근 가능
 //  - 그 외에는 404 (존재 여부도 노출하지 않음)
 // 이렇게 해서 "임의 이미지를 우리 도메인에 올려 무단 호스팅"하는 악용을 막는다.
-app.get('/uploads/:filename', (req, res) => {
+app.get('/uploads/:filename', async (req, res) => {
     const filename = path.basename(req.params.filename); // 경로 조작 방지
-    const imagePath = `/uploads/${filename}`;
-    db.get(`SELECT user_id, is_public FROM outfits WHERE image_path = ?`, [imagePath], (err, row) => {
-        if (err) return res.status(500).end();
-        if (!row) return res.status(404).end();
-        const allowed = row.is_public === 1 || row.user_id === peekUserId(req);
-        if (!allowed) return res.status(404).end(); // 권한 없으면 "없음"으로 응답
-        res.sendFile(path.join(UPLOAD_DIR, filename), {
-            headers: { 'Cache-Control': 'private, max-age=86400' },
-        }, (e) => { if (e && !res.headersSent) res.status(404).end(); });
-    });
+    const row = await dbGet(`SELECT user_id, is_public FROM outfits WHERE image_path = ?`, [`/uploads/${filename}`]);
+    const allowed = row && (row.is_public === 1 || row.user_id === peekUserId(req));
+    if (!allowed) return res.status(404).end(); // 권한 없으면 "없음"으로 응답
+    res.sendFile(path.join(UPLOAD_DIR, filename), {
+        headers: { 'Cache-Control': 'private, max-age=86400' },
+    }, (e) => { if (e && !res.headersSent) res.status(404).end(); });
 });
 
-// 제미나이 API 초기화
+// ─────────────────────────────────────────────
+// 5. AI 분석 재료 — 계절 / 날씨 / 프롬프트
+// ─────────────────────────────────────────────
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// --- 라우트 시작 ---
+// 서버 날짜 기준 현재 계절 (시즌 트렌드 추천에 사용)
+function getSeason(lang) {
+    const month = new Date().getMonth() + 1;
+    const idx = month >= 3 && month <= 5 ? 0 : month >= 6 && month <= 8 ? 1 : month >= 9 && month <= 11 ? 2 : 3;
+    return (lang === 'English'
+        ? ['spring', 'summer', 'autumn', 'winter']
+        : ['봄', '여름', '가을', '겨울'])[idx];
+}
 
-// 유저가 "구글 로그인" 버튼을 누르면 이 주소로 옵니다.
-app.get('/auth/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
-// 구글에서 로그인이 끝나면 다시 우리 서버로 돌아오는 주소입니다.
-app.get('/auth/google/callback',
-    passport.authenticate('google', { failureRedirect: '/' }), (req, res) => res.redirect('/'));
-// 프론트엔드에서 "나 지금 로그인 되어있나?" 확인할 때 쓸 API
-app.get('/api/user', (req, res) => res.json(req.user || null));
+// OpenWeather 에서 현재 날씨를 가져온다. 좌표가 있으면 그 위치, 없으면 인천 기본.
+// 키가 없거나 호출이 실패해도 분석은 계속 가야 하므로 절대 throw 하지 않는다.
+// 반환: { location, weather }
+async function fetchWeather(coords) {
+    const apiKey = process.env.WEATHER_API_KEY;
+    let location = coords ? '사용자 현재 위치' : '인천';
+    let weather = '날씨 정보 없음';
+    if (!apiKey) return { location, weather };
 
-// DB에서 내 기록 다 가져오기 API (로그인 유저 또는 익명 세션 본인 것만)
-app.get('/api/history', attachUserId, (req, res) => {
-    const userId = req.appUserId;
-    // liked: 현재 유저가 이 코디에 좋아요를 눌렀는지 (0/1)
-    db.all(
-        `SELECT o.*,
-            EXISTS(SELECT 1 FROM outfit_likes l WHERE l.outfit_id = o.id AND l.user_id = ?) AS liked
-         FROM outfits o WHERE o.user_id = ? ORDER BY o.created_at DESC`,
-        [userId, userId], (err, rows) => {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json(rows);
-        });
-});
+    const query = coords ? `lat=${coords.lat}&lon=${coords.lon}` : 'q=Incheon';
+    const url = `https://api.openweathermap.org/data/2.5/weather?${query}&appid=${apiKey}&units=metric&lang=kr`;
 
-// 커뮤니티에 공개된 코디들 (모든 유저 공통, likes 포함)
-app.get('/api/public-gallery', attachUserId, (req, res) => {
-    const userId = req.appUserId;
-    db.all(
-        `SELECT o.id, o.image_path, o.analysis, o.likes, o.created_at,
-            EXISTS(SELECT 1 FROM outfit_likes l WHERE l.outfit_id = o.id AND l.user_id = ?) AS liked
-         FROM outfits o WHERE o.is_public = 1 ORDER BY o.created_at DESC LIMIT 50`,
-        [userId], (err, rows) => {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json(rows);
-        });
-});
-
-// 좋아요 토글 (유저/익명 세션당 1회, 다시 누르면 취소) → { likes, liked }
-app.post('/api/outfits/:id/like', attachUserId, (req, res) => {
-    const outfitId = req.params.id;
-    const userId = req.appUserId;
-
-    // 갱신된 likes 수를 읽어서 응답하는 마무리 함수
-    const finish = (liked) => db.get(`SELECT likes FROM outfits WHERE id = ?`, [outfitId], (e, row) => {
-        if (e || !row) return res.status(404).json({ error: '데이터 없음' });
-        res.json({ likes: row.likes, liked });
-    });
-
-    db.get(`SELECT 1 FROM outfit_likes WHERE user_id = ? AND outfit_id = ?`, [userId, outfitId], (err, already) => {
-        if (err) return res.status(500).json({ error: err.message });
-        if (already) {
-            // 이미 눌렀음 → 취소
-            db.run(`DELETE FROM outfit_likes WHERE user_id = ? AND outfit_id = ?`, [userId, outfitId], (e) => {
-                if (e) return res.status(500).json({ error: e.message });
-                db.run(`UPDATE outfits SET likes = MAX(likes - 1, 0) WHERE id = ?`, [outfitId], () => finish(false));
-            });
-        } else {
-            // 처음 누름 → 좋아요
-            db.run(`INSERT INTO outfit_likes (user_id, outfit_id) VALUES (?, ?)`, [userId, outfitId], (e) => {
-                if (e) return res.status(500).json({ error: e.message });
-                db.run(`UPDATE outfits SET likes = likes + 1 WHERE id = ?`, [outfitId], () => finish(true));
-            });
-        }
-    });
-});
-
-// 내 코디 삭제 (본인 것만 — 로그인/익명 모두 자기 것만). 업로드 파일도 같이 지운다.
-app.delete('/api/outfits/:id', attachUserId, (req, res) => {
-    const { id } = req.params;
-    const userId = req.appUserId;
-    db.get(`SELECT image_path FROM outfits WHERE id = ? AND user_id = ?`, [id, userId], (err, row) => {
-        if (err || !row) return res.status(404).json({ error: '기록 없음' });
-        // image_path 는 "/uploads/파일명" → 실제 저장 폴더(UPLOAD_DIR) 기준으로 변환
-        const fileName = path.basename(row.image_path);
-        const realPath = path.join(UPLOAD_DIR, fileName);
-        try { if (fs.existsSync(realPath)) fs.unlinkSync(realPath); } catch (e) { /* 파일 없어도 무시 */ }
-        db.run(`DELETE FROM outfits WHERE id = ? AND user_id = ?`, [id, userId], (err2) => {
-            if (err2) return res.status(500).json({ error: err2.message });
-            // 이 코디에 달린 좋아요 기록도 함께 정리 (고아 데이터 방지)
-            db.run(`DELETE FROM outfit_likes WHERE outfit_id = ?`, [id]);
-            res.json({ message: '삭제 완료' });
-        });
-    });
-});
-
-// 분석 및 저장 API (로그인 없이도 사용 가능 — 익명은 세션에 격리 저장)
-app.post('/analyze-outfit', attachUserId, analyzeLimiter, dailyCapGuard, uploadSingle, async (req, res) => {
-    console.log("분석 요청 수신! 위치 정보 확인중...");
-
-    let savedFilePath = null; // 실패 시 정리할 업로드 파일 경로
+    // 날씨 API가 응답하지 않을 때 무한 대기하지 않도록 5초 타임아웃
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
     try {
-        if (!req.file) return res.status(400).json({ error: '이미지 업로드 실패.' });
-
-        // 1. 프론트엔드에서 보낸 위도(lat), 경도(lon), 언어, 공개여부 받기
-        // 좌표는 숫자 + 유효 범위(위도 ±90, 경도 ±180)일 때만 사용 (잘못된 값으로 외부 URL 구성 방지)
-        const latNum = Number(req.body.lat);
-        const lonNum = Number(req.body.lon);
-        const hasCoords = Number.isFinite(latNum) && Number.isFinite(lonNum)
-            && Math.abs(latNum) <= 90 && Math.abs(lonNum) <= 180;
-        const lang = req.body.lang === 'English' ? 'English' : 'Korean'; // 답변 언어
-        // 커뮤니티 공개는 로그인 사용자만 허용 (익명 공개 사진은 책임 추적이 안 되므로 차단).
-        // 프런트가 보내더라도 서버에서 한 번 더 강제한다.
-        const isPublic = (req.user && req.body.isPublic === 'true') ? 1 : 0;
-
-        // 현재 계절 (서버 날짜 기준) — 시즌 트렌드 추천에 사용
-        const month = new Date().getMonth() + 1;
-        const season = lang === 'English'
-            ? (month >= 3 && month <= 5 ? 'spring' : month >= 6 && month <= 8 ? 'summer' : month >= 9 && month <= 11 ? 'autumn' : 'winter')
-            : (month >= 3 && month <= 5 ? '봄' : month >= 6 && month <= 8 ? '여름' : month >= 9 && month <= 11 ? '가을' : '겨울');
-        const weatherApiKey = process.env.WEATHER_API_KEY;
-
-        let currentLocation = "인천"; // 기본값
-        let currentWeather = "날씨 정보 없음";
-        let weatherUrl = `https://api.openweathermap.org/data/2.5/weather?q=Incheon&appid=${weatherApiKey}&units=metric&lang=kr`;
-
-        // 2. 유효한 좌표가 있다면 해당 위치 날씨로 URL 변경!
-        if (hasCoords) {
-            weatherUrl = `https://api.openweathermap.org/data/2.5/weather?lat=${latNum}&lon=${lonNum}&appid=${weatherApiKey}&units=metric&lang=kr`;
-            currentLocation = "사용자 현재 위치";
+        const res = await fetch(url, { signal: controller.signal });
+        const data = await res.json();
+        if (res.ok) {
+            weather = `온도: ${Math.round(data.main.temp)}도, 상태: ${data.weather[0].description}`;
+            if (coords) location = data.name; // API가 알려주는 지역 이름으로 업데이트
         }
+    } catch (err) {
+        console.error('날씨 호출 실패:', err.message);
+    } finally {
+        clearTimeout(timer);
+    }
+    return { location, weather };
+}
 
-        // 3. 실제 날씨 가져오기 (날씨 키가 없거나 실패해도 분석은 계속 진행)
-        if (weatherApiKey) {
-            // 날씨 API가 응답하지 않을 때 무한 대기하지 않도록 5초 타임아웃
-            const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), 5000);
-            try {
-                const weatherRes = await fetch(weatherUrl, { signal: controller.signal });
-                const wData = await weatherRes.json();
-                if (weatherRes.ok) {
-                    currentWeather = `온도: ${Math.round(wData.main.temp)}도, 상태: ${wData.weather[0].description}`;
-                    if (hasCoords) currentLocation = wData.name; // API가 알려주는 지역 이름으로 업데이트
-                }
-            } catch (err) {
-                console.error("날씨 호출 실패:", err.message);
-            } finally {
-                clearTimeout(timer);
-            }
-        }
-
-        // 4. 이미지 최적화: EXIF 회전 보정 + 1080px 리사이즈 + JPEG 압축 후 저장
-        //    (원본 수 MB → 보통 수백 KB로 줄어 갤러리 로딩이 빨라짐)
-        const filename = `${crypto.randomUUID()}.jpg`; // 충돌·추측 방지용 무작위 파일명
-        const optimized = await sharp(req.file.buffer)
-            .rotate() // 폰 사진 방향(EXIF) 자동 보정
-            .resize({ width: 1080, withoutEnlargement: true })
-            .jpeg({ quality: 80 })
-            .toBuffer();
-        savedFilePath = path.join(UPLOAD_DIR, filename);
-        fs.writeFileSync(savedFilePath, optimized);
-
-        const imageParts = [{
-            inlineData: {
-                data: optimized.toString('base64'),
-                mimeType: 'image/jpeg',
-            },
-        }];
-
-        // 5. 제미나이에게 위치와 날씨 정보까지 포함해서 물어보기!
-        const model = genAI.getGenerativeModel({ model: 'gemini-flash-lite-latest' });
-        const prompt = `
+// Gemini 에게 보낼 스타일리스트 프롬프트.
+// 결과를 프런트(AnalysisResult.jsx)가 섹션 단위로 파싱하므로 형식을 강제한다.
+function buildPrompt({ location, weather, season, lang }) {
+    return `
 너는 전문 패션 스타일리스트야. 첨부된 이미지는 사용자의 오늘 옷차림 거울 셀카야.
-현재 위치는 ${currentLocation}, 날씨는 [${currentWeather}], 지금은 ${season} 시즌이야.
+현재 위치는 ${location}, 날씨는 [${weather}], 지금은 ${season} 시즌이야.
 
 반드시 아래 형식 그대로 답변해줘. 각 섹션 사이에는 빈 줄(개행 2번)을 넣어.
 - 섹션 제목 줄은 "이모지 + 제목"만 쓰고, 내용은 다음 줄부터 써.
@@ -419,24 +347,121 @@ app.post('/analyze-outfit', attachUserId, analyzeLimiter, dailyCapGuard, uploadS
 
 IMPORTANT: 위 형식과 이모지는 그대로 두되, 모든 글(제목·내용)은 ${lang} 로 작성해줘.
 `;
+}
 
+// ─────────────────────────────────────────────
+// 6. 라우트
+// ─────────────────────────────────────────────
+
+// 유저가 "구글 로그인" 버튼을 누르면 이 주소로 옵니다.
+app.get('/auth/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
+// 구글에서 로그인이 끝나면 다시 우리 서버로 돌아오는 주소입니다.
+app.get('/auth/google/callback',
+    passport.authenticate('google', { failureRedirect: '/' }), (req, res) => res.redirect('/'));
+// 프론트엔드에서 "나 지금 로그인 되어있나?" 확인할 때 쓸 API
+app.get('/api/user', (req, res) => res.json(req.user || null));
+
+// 내 기록 조회 (로그인 유저 또는 익명 세션 본인 것만)
+// liked: 현재 유저가 이 코디에 좋아요를 눌렀는지 (0/1)
+app.get('/api/history', attachUserId, async (req, res) => {
+    const rows = await dbAll(
+        `SELECT o.*,
+            EXISTS(SELECT 1 FROM outfit_likes l WHERE l.outfit_id = o.id AND l.user_id = ?) AS liked
+         FROM outfits o WHERE o.user_id = ? ORDER BY o.created_at DESC`,
+        [req.appUserId, req.appUserId]);
+    res.json(rows);
+});
+
+// 커뮤니티에 공개된 코디들 (모든 유저 공통, likes 포함)
+app.get('/api/public-gallery', attachUserId, async (req, res) => {
+    const rows = await dbAll(
+        `SELECT o.id, o.image_path, o.analysis, o.likes, o.created_at,
+            EXISTS(SELECT 1 FROM outfit_likes l WHERE l.outfit_id = o.id AND l.user_id = ?) AS liked
+         FROM outfits o WHERE o.is_public = 1 ORDER BY o.created_at DESC LIMIT 50`,
+        [req.appUserId]);
+    res.json(rows);
+});
+
+// 좋아요 토글 (유저/익명 세션당 1회, 다시 누르면 취소) → { likes, liked }
+app.post('/api/outfits/:id/like', attachUserId, async (req, res) => {
+    const outfitId = req.params.id;
+    const userId = req.appUserId;
+
+    const already = await dbGet(`SELECT 1 FROM outfit_likes WHERE user_id = ? AND outfit_id = ?`, [userId, outfitId]);
+    if (already) {
+        // 이미 눌렀음 → 취소
+        await dbRun(`DELETE FROM outfit_likes WHERE user_id = ? AND outfit_id = ?`, [userId, outfitId]);
+        await dbRun(`UPDATE outfits SET likes = MAX(likes - 1, 0) WHERE id = ?`, [outfitId]);
+    } else {
+        // 처음 누름 → 좋아요
+        await dbRun(`INSERT INTO outfit_likes (user_id, outfit_id) VALUES (?, ?)`, [userId, outfitId]);
+        await dbRun(`UPDATE outfits SET likes = likes + 1 WHERE id = ?`, [outfitId]);
+    }
+    const row = await dbGet(`SELECT likes FROM outfits WHERE id = ?`, [outfitId]);
+    if (!row) return res.status(404).json({ error: '데이터 없음' });
+    res.json({ likes: row.likes, liked: !already });
+});
+
+// 내 코디 삭제 (본인 것만 — 로그인/익명 모두 자기 것만). 업로드 파일도 같이 지운다.
+app.delete('/api/outfits/:id', attachUserId, async (req, res) => {
+    const { id } = req.params;
+    const userId = req.appUserId;
+
+    const row = await dbGet(`SELECT image_path FROM outfits WHERE id = ? AND user_id = ?`, [id, userId]);
+    if (!row) return res.status(404).json({ error: '기록 없음' });
+
+    // image_path 는 "/uploads/파일명" → 실제 저장 폴더(UPLOAD_DIR) 기준으로 변환
+    const realPath = path.join(UPLOAD_DIR, path.basename(row.image_path));
+    try { if (fs.existsSync(realPath)) fs.unlinkSync(realPath); } catch (e) { /* 파일 없어도 무시 */ }
+
+    await dbRun(`DELETE FROM outfits WHERE id = ? AND user_id = ?`, [id, userId]);
+    await dbRun(`DELETE FROM outfit_likes WHERE outfit_id = ?`, [id]); // 좋아요 기록도 정리 (고아 데이터 방지)
+    res.json({ message: '삭제 완료' });
+});
+
+// 분석 및 저장 API (로그인 없이도 사용 가능 — 익명은 세션에 격리 저장)
+// 흐름: 입력 검증 → 이미지 최적화·저장 → 날씨 조회 → Gemini 분석 → DB 저장
+app.post('/analyze-outfit', attachUserId, analyzeLimiter, dailyCapGuard, uploadSingle, async (req, res) => {
+    console.log("분석 요청 수신! 위치 정보 확인중...");
+
+    let savedFilePath = null; // 실패 시 정리할 업로드 파일 경로
+    try {
+        if (!req.file) return res.status(400).json({ error: '이미지 업로드 실패.' });
+
+        // 입력 정리 — 좌표는 숫자 + 유효 범위(위도 ±90, 경도 ±180)일 때만 사용
+        const lat = Number(req.body.lat);
+        const lon = Number(req.body.lon);
+        const coords = (Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180)
+            ? { lat, lon } : null;
+        const lang = req.body.lang === 'English' ? 'English' : 'Korean'; // 답변 언어
+        // 커뮤니티 공개는 로그인 사용자만 허용 (익명 공개 사진은 책임 추적이 안 되므로 차단).
+        // 프런트가 보내더라도 서버에서 한 번 더 강제한다.
+        const isPublic = (req.user && req.body.isPublic === 'true') ? 1 : 0;
+
+        // 이미지 최적화 후 저장 (buffer 는 Gemini 전송에 재사용)
+        const { filename, filePath, buffer } = await optimizeAndSave(req.file.buffer);
+        savedFilePath = filePath;
+
+        // 날씨 + 계절 → 프롬프트 구성
+        const { location, weather } = await fetchWeather(coords);
+        const prompt = buildPrompt({ location, weather, season: getSeason(lang), lang });
+
+        // Gemini 멀티모달 분석
         dailyCounter.count += 1; // 실제 Gemini 호출 직전에 일일 카운터 증가
-        const result = await model.generateContent([prompt, ...imageParts]);
-        const responseText = result.response.text();
+        const model = genAI.getGenerativeModel({ model: 'gemini-flash-lite-latest' });
+        const result = await model.generateContent([
+            prompt,
+            { inlineData: { data: buffer.toString('base64'), mimeType: 'image/jpeg' } },
+        ]);
+        const analysis = result.response.text();
 
-        // 6. DB에 저장! (저장 완료를 기다린 뒤 응답 — 실패하면 catch 로)
-        const userId = req.appUserId;
-        const imagePath = `/uploads/${filename}`;
-        const newId = await new Promise((resolve, reject) => {
-            db.run(`INSERT INTO outfits (user_id, image_path, analysis, is_public) VALUES (?, ?, ?, ?)`,
-                [userId, imagePath, responseText, isPublic], function (err) {
-                    if (err) return reject(err);
-                    resolve(this.lastID);
-                });
-        });
-        console.log(`${newId}번 코디(위치: ${currentLocation}, 공개: ${isPublic}) 저장 완료!`);
+        // DB 저장 완료를 기다린 뒤 응답 (실패하면 catch 로)
+        const { lastID: newId } = await dbRun(
+            `INSERT INTO outfits (user_id, image_path, analysis, is_public) VALUES (?, ?, ?, ?)`,
+            [req.appUserId, `/uploads/${filename}`, analysis, isPublic]);
+        console.log(`${newId}번 코디(위치: ${location}, 공개: ${isPublic}) 저장 완료!`);
 
-        res.json({ analysis: responseText, id: newId });
+        res.json({ analysis, id: newId });
 
     } catch (error) {
         console.error('분석 중 에러 발생:', error);
@@ -455,8 +480,12 @@ app.get('/logout', (req, res, next) => {
     });
 });
 
-// 최후의 에러 핸들러 — 처리되지 않은 에러가 와도 스택을 노출하지 않고
-// 깔끔한 JSON 으로 응답한다. (4개 인자라 Express 가 에러 핸들러로 인식)
+// ─────────────────────────────────────────────
+// 7. 에러 핸들러 / 서버 기동 / 안전한 종료
+// ─────────────────────────────────────────────
+
+// 최후의 에러 핸들러 — 처리되지 않은 에러(async 라우트의 reject 포함)가 와도
+// 스택을 노출하지 않고 깔끔한 JSON 으로 응답한다. (4개 인자라 Express 가 에러 핸들러로 인식)
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
     console.error('처리되지 않은 에러:', err);
