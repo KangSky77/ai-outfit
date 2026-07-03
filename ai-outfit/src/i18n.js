@@ -3,7 +3,7 @@ const translations = {
   ko: {
     loginDesc: '나만을 위한 스마트 스타일링 가이드',
     loginBtn: 'Google 계정으로 시작',
-    headerTitle: '나의 옷장',
+    headerTitle: 'AI Closet', // 브랜드명은 번역하지 않음 (Google OAuth 앱 이름과 정확히 일치해야 함)
     uploadTitle: '코디 분석하기',
     uploadDesc: '터치해서 사진을 업로드하거나 촬영하세요.',
     selected: '사진 선택됨',
@@ -38,7 +38,7 @@ const translations = {
   en: {
     loginDesc: 'Your smart styling guide powered by AI',
     loginBtn: 'Continue with Google',
-    headerTitle: 'MY CLOSET',
+    headerTitle: 'AI Closet', // brand name stays untranslated (must match Google OAuth app name)
     uploadTitle: 'Analyze Outfit',
     uploadDesc: 'Tap to upload or take a photo of your look.',
     selected: 'Selected',
