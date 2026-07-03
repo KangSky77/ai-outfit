@@ -254,6 +254,11 @@ async function optimizeAndSave(originalBuffer) {
     return { filename, filePath, buffer };
 }
 
+// 법적 고지 페이지 (Google OAuth 브랜딩 인증 등에 필요한 공개 URL).
+// 정적 파일이라 static/ 원본에서 직접 서빙 — dist 빌드 여부와 무관하게 항상 최신.
+app.get('/privacy', (req, res) => res.sendFile(path.join(__dirname, 'static', 'privacy.html')));
+app.get('/terms', (req, res) => res.sendFile(path.join(__dirname, 'static', 'terms.html')));
+
 // 빌드된 React 앱(dist) 서빙
 app.use(express.static(path.join(__dirname, 'dist')));
 
