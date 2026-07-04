@@ -34,6 +34,12 @@ const translations = {
     cameraError: '카메라를 사용할 수 없어요. 권한을 확인해주세요.',
     close: '닫기',
     publicNeedsLogin: '커뮤니티에 공개하려면 로그인하세요.',
+    scoreUnit: '점',
+    scoreGreat: '완벽해요! 👏',
+    scoreGood: '좋아요 ✨',
+    scoreOkay: '무난해요 🙂',
+    scoreHmm: '아쉬워요 💪',
+    shareScorePrefix: '오늘의 코디 점수',
   },
   en: {
     loginDesc: 'Your smart styling guide powered by AI',
@@ -69,6 +75,12 @@ const translations = {
     cameraError: 'Camera unavailable. Please check permissions.',
     close: 'Close',
     publicNeedsLogin: 'Sign in to share to the community.',
+    scoreUnit: ' pts',
+    scoreGreat: 'Perfect! 👏',
+    scoreGood: 'Looking good ✨',
+    scoreOkay: 'Not bad 🙂',
+    scoreHmm: 'Room to grow 💪',
+    shareScorePrefix: 'My outfit score today:',
   },
 }
 

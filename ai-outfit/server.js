@@ -76,6 +76,7 @@ db.serialize(() => {
     });
     addColumn(`ALTER TABLE outfits ADD COLUMN is_public INTEGER DEFAULT 0`); // 커뮤니티 공개
     addColumn(`ALTER TABLE outfits ADD COLUMN likes INTEGER DEFAULT 0`);     // 좋아요 수
+    addColumn(`ALTER TABLE outfits ADD COLUMN score INTEGER`);               // AI 코디 점수 (0~100, 옛 기록은 NULL)
 
     // 좋아요 중복 방지: 유저-코디 쌍을 기록 (PRIMARY KEY로 같은 사람이 같은 글 두 번 못 누름)
     db.run(`CREATE TABLE IF NOT EXISTS outfit_likes (
@@ -277,6 +278,30 @@ app.get('/uploads/:filename', async (req, res) => {
     }, (e) => { if (e && !res.headersSent) res.status(404).end(); });
 });
 
+// 만료된 익명 기록 정리 — 익명 세션은 24시간이면 만료되어 그 기록에 접근할
+// 방법이 영원히 사라진다. 접근 불가가 된 사진을 무기한 보관하지 않도록
+// (개인정보 최소 보관 + 디스크 위생) 7일 지난 익명 코디를 매일 정리한다.
+const ANON_RETENTION_DAYS = 7;
+async function cleanupExpiredAnonOutfits() {
+    try {
+        const rows = await dbAll(
+            `SELECT id, image_path FROM outfits
+             WHERE user_id LIKE 'anon:%' AND created_at < datetime('now', ?)`,
+            [`-${ANON_RETENTION_DAYS} days`]);
+        for (const row of rows) {
+            const realPath = path.join(UPLOAD_DIR, path.basename(row.image_path));
+            try { if (fs.existsSync(realPath)) fs.unlinkSync(realPath); } catch (_) { /* 파일 없어도 무시 */ }
+            await dbRun(`DELETE FROM outfits WHERE id = ?`, [row.id]);
+            await dbRun(`DELETE FROM outfit_likes WHERE outfit_id = ?`, [row.id]);
+        }
+        if (rows.length) console.log(`🧹 만료된 익명 코디 ${rows.length}건 정리 완료`);
+    } catch (e) {
+        console.error('익명 기록 정리 실패:', e.message);
+    }
+}
+cleanupExpiredAnonOutfits();                                           // 부팅 시 1회
+setInterval(cleanupExpiredAnonOutfits, 24 * 60 * 60 * 1000).unref(); // 이후 매일
+
 // ─────────────────────────────────────────────
 // 5. AI 분석 재료 — 계절 / 날씨 / 프롬프트
 // ─────────────────────────────────────────────
@@ -323,15 +348,21 @@ async function fetchWeather(coords) {
 
 // Gemini 에게 보낼 스타일리스트 프롬프트.
 // 결과를 프런트(AnalysisResult.jsx)가 섹션 단위로 파싱하므로 형식을 강제한다.
+// 첫 줄의 "SCORE: 숫자"는 기계용 라인 — 서버가 추출해 score 컬럼에 저장하고 본문에서는 제거한다.
 function buildPrompt({ location, weather, season, lang }) {
     return `
 너는 전문 패션 스타일리스트야. 첨부된 이미지는 사용자의 오늘 옷차림 거울 셀카야.
 현재 위치는 ${location}, 날씨는 [${weather}], 지금은 ${season} 시즌이야.
 
 반드시 아래 형식 그대로 답변해줘. 각 섹션 사이에는 빈 줄(개행 2번)을 넣어.
+- 맨 첫 줄은 반드시 "SCORE: 숫자" 형식의 총점 한 줄로 시작해 (이 줄은 어떤 언어로도 번역하지 말 것).
+  점수는 0~100 정수로, 색 조화 30점 + 핏·실루엣 30점 + 날씨 적합성 20점 + 스타일 완성도 20점을 합산해.
+  후하게 주지 말고 솔직하게 — 아쉬운 코디에는 50~60점대도 과감하게 줘. 매번 비슷한 점수를 주지 마.
 - 섹션 제목 줄은 "이모지 + 제목"만 쓰고, 내용은 다음 줄부터 써.
 - "추천 아이템"은 반드시 "- " 로 시작하는 목록으로 써.
 - 각 내용은 친절하고 센스 있는 말투로 간결하게.
+
+SCORE: (0~100 정수)
 
 👕 스타일 분석
 (색상 조화, 핏, 전체적인 인상을 2~3문장으로)
@@ -380,7 +411,7 @@ app.get('/api/history', attachUserId, async (req, res) => {
 // 커뮤니티에 공개된 코디들 (모든 유저 공통, likes 포함)
 app.get('/api/public-gallery', attachUserId, async (req, res) => {
     const rows = await dbAll(
-        `SELECT o.id, o.image_path, o.analysis, o.likes, o.created_at,
+        `SELECT o.id, o.image_path, o.analysis, o.likes, o.score, o.created_at,
             EXISTS(SELECT 1 FROM outfit_likes l WHERE l.outfit_id = o.id AND l.user_id = ?) AS liked
          FROM outfits o WHERE o.is_public = 1 ORDER BY o.created_at DESC LIMIT 50`,
         [req.appUserId]);
@@ -391,6 +422,10 @@ app.get('/api/public-gallery', attachUserId, async (req, res) => {
 app.post('/api/outfits/:id/like', attachUserId, async (req, res) => {
     const outfitId = req.params.id;
     const userId = req.appUserId;
+
+    // 존재하지 않는 코디에 대한 요청을 먼저 걸러 outfit_likes 에 고아 행이 남지 않게 한다
+    const outfit = await dbGet(`SELECT 1 FROM outfits WHERE id = ?`, [outfitId]);
+    if (!outfit) return res.status(404).json({ error: '데이터 없음' });
 
     const already = await dbGet(`SELECT 1 FROM outfit_likes WHERE user_id = ? AND outfit_id = ?`, [userId, outfitId]);
     if (already) {
@@ -458,15 +493,21 @@ app.post('/analyze-outfit', attachUserId, analyzeLimiter, dailyCapGuard, uploadS
             prompt,
             { inlineData: { data: buffer.toString('base64'), mimeType: 'image/jpeg' } },
         ]);
-        const analysis = result.response.text();
+        const raw = result.response.text();
+
+        // 기계용 첫 줄 "SCORE: NN" 추출 → score 컬럼에 저장, 본문에서는 제거.
+        // Gemini 가 형식을 안 지키면 score 는 null (프런트가 배지를 숨겨 안전).
+        const scoreMatch = raw.match(/^\s*SCORE:\s*(\d{1,3})\s*$/m);
+        const score = scoreMatch ? Math.min(100, Math.max(0, Number(scoreMatch[1]))) : null;
+        const analysis = scoreMatch ? raw.replace(scoreMatch[0], '').trim() : raw.trim();
 
         // DB 저장 완료를 기다린 뒤 응답 (실패하면 catch 로)
         const { lastID: newId } = await dbRun(
-            `INSERT INTO outfits (user_id, image_path, analysis, is_public) VALUES (?, ?, ?, ?)`,
-            [req.appUserId, `/uploads/${filename}`, analysis, isPublic]);
-        console.log(`${newId}번 코디(위치: ${location}, 공개: ${isPublic}) 저장 완료!`);
+            `INSERT INTO outfits (user_id, image_path, analysis, is_public, score) VALUES (?, ?, ?, ?, ?)`,
+            [req.appUserId, `/uploads/${filename}`, analysis, isPublic, score]);
+        console.log(`${newId}번 코디(위치: ${location}, 점수: ${score ?? '없음'}, 공개: ${isPublic}) 저장 완료!`);
 
-        res.json({ analysis, id: newId });
+        res.json({ analysis, score, id: newId });
 
     } catch (error) {
         console.error('분석 중 에러 발생:', error);

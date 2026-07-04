@@ -8,6 +8,12 @@
 <style>
   :root {
     --bg: #f9f7f3; --card: #ffffff; --text: #3e362e; --muted: #8a817c; --accent: #4a3f36; --border: #eeeeee;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #17140f; --card: #221d18; --text: #ece5db; --muted: #a99e90; --accent: #d8c4a0; --border: #38302a;
+    }
   }
   * { box-sizing: border-box; }
   body {

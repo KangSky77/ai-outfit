@@ -2,14 +2,18 @@ import { dict } from '../i18n.js'
 
 // Web Share API(폰의 기본 공유 시트)로 분석 결과를 공유한다.
 // 지원하지 않는 환경(주로 데스크탑)에서는 클립보드 복사로 폴백.
-export default function ShareButton({ text }) {
+// 점수가 있으면 "오늘의 코디 점수 NN점!"을 앞에 붙여 공유 훅을 만든다.
+export default function ShareButton({ text, score }) {
+  const shareText = score != null
+    ? `${dict.shareScorePrefix} ${score}${dict.scoreUnit}! 👕\n\n${text}`
+    : text
+
   const handleShare = async () => {
-    const data = { title: 'AI Closet', text }
     try {
       if (navigator.share) {
-        await navigator.share(data)
+        await navigator.share({ title: 'AI Closet', text: shareText })
       } else if (navigator.clipboard) {
-        await navigator.clipboard.writeText(text)
+        await navigator.clipboard.writeText(shareText)
         alert(dict.copied)
       }
     } catch {

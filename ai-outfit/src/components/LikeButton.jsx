@@ -2,7 +2,12 @@
 // 스타일은 className 으로 받아 두 화면의 기존 CSS 를 그대로 쓴다.
 export default function LikeButton({ liked, likes, onClick, className }) {
   return (
-    <button className={`${className} ${liked ? 'liked' : ''}`} onClick={onClick}>
+    <button
+      className={`${className} ${liked ? 'liked' : ''}`}
+      onClick={onClick}
+      aria-pressed={!!liked}
+      aria-label="like"
+    >
       {liked ? '❤️' : '🤍'} <span>{likes ?? 0}</span>
     </button>
   )

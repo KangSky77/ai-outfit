@@ -4,6 +4,7 @@ import { analyzeOutfit, getUserLocation } from '../api.js'
 import AnalysisResult from './AnalysisResult.jsx'
 import ShareButton from './ShareButton.jsx'
 import CameraCapture from './CameraCapture.jsx'
+import ScoreBadge from './ScoreBadge.jsx'
 
 export default function UploadTab({ onAnalyzed, user }) {
   const [file, setFile] = useState(null)
@@ -24,7 +25,8 @@ export default function UploadTab({ onAnalyzed, user }) {
       if (data.error) {
         setResult({ error: `${dict.errorPrefix}: ${data.error}` })
       } else {
-        setResult({ text: data.analysis })
+        setResult({ text: data.analysis, score: data.score })
+        setFile(null) // 같은 사진을 실수로 다시 제출(비용+중복 기록)하지 않게 초기화
         onAnalyzed?.() // 기록 갱신
       }
     } catch (err) {
@@ -109,8 +111,9 @@ export default function UploadTab({ onAnalyzed, user }) {
             <h4>{dict.resultLabel}</h4>
             {result.error ? result.error : (
               <>
+                <ScoreBadge score={result.score} />
                 <AnalysisResult text={result.text} />
-                <ShareButton text={result.text} />
+                <ShareButton text={result.text} score={result.score} />
               </>
             )}
           </div>

@@ -3,6 +3,7 @@ import { dict } from '../i18n.js'
 import Modal from './Modal.jsx'
 import AnalysisResult from './AnalysisResult.jsx'
 import ShareButton from './ShareButton.jsx'
+import ScoreBadge from './ScoreBadge.jsx'
 import LikeButton from './LikeButton.jsx'
 
 export default function HistoryTab({ data, onLike, onDelete }) {
@@ -36,7 +37,12 @@ export default function HistoryTab({ data, onLike, onDelete }) {
             <div className="history-main" onClick={() => setSelected(item)}>
               <img src={item.image_path} alt="" loading="lazy" />
               <div>
-                <div className="history-title">{dict.historyItemTitle}</div>
+                <div className="history-title">
+                  {dict.historyItemTitle}
+                  {item.score != null && (
+                    <span className="score-chip">{item.score}{dict.scoreUnit}</span>
+                  )}
+                </div>
                 <div className="history-date">
                   {new Date(item.created_at).toLocaleDateString()}
                 </div>
@@ -88,8 +94,9 @@ export default function HistoryTab({ data, onLike, onDelete }) {
             {new Date(selected.created_at).toLocaleString()}
           </div>
           <h4 className="modal-title">{dict.resultLabel}</h4>
+          <ScoreBadge score={selected.score} />
           <AnalysisResult text={selected.analysis} />
-          <ShareButton text={selected.analysis} />
+          <ShareButton text={selected.analysis} score={selected.score} />
         </Modal>
       )}
     </div>
